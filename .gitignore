@@ -1,0 +1,15 @@
+# Собранные места и модели (собираются из src командой rojo build)
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# Генерируется Rojo для автодополнения в VS Code
+sourcemap.json
+
+# Генерируется Selene
+roblox.yml
+
+# Системный мусор
+.DS_Store
+Thumbs.db
