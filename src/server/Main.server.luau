@@ -1,10 +1,16 @@
 --!strict
--- Точка входа сервера: запускает системы игры по порядку.
+-- Точка входа сервера: строит карту и запускает системы игры по порядку.
 
+local Map = require(script.Parent.Map)
 local PlayerData = require(script.Parent.PlayerData)
-local WarehouseMap = require(script.Parent.WarehouseMap)
-local Boxes = require(script.Parent.Boxes)
+local Scanning = require(script.Parent.Scanning)
+local Tables = require(script.Parent.Tables)
+local Totes = require(script.Parent.Totes)
+local Uniform = require(script.Parent.Uniform)
 
+Map.build()
 PlayerData.start()
-WarehouseMap.build()
-Boxes.start()
+Uniform.start()
+Tables.start()
+Totes.start()
+Scanning.start()

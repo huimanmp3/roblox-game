@@ -1,5 +1,5 @@
 --!strict
--- Всплывающие сообщения от сервера: «+10 ₽», «Руки заняты!» и т. п.
+-- Всплывающие сообщения от сервера: «Тара заполнена!», «Сначала переоденься» и т. п.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -7,13 +7,14 @@ local TweenService = game:GetService("TweenService")
 
 local notifyEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify") :: RemoteEvent
 
-local SHOW_TIME = 2.5
+local SHOW_TIME = 3
 local FADE_TIME = 0.5
 local MAX_VISIBLE = 4
+local TOP_OFFSET = 140 -- ниже панели с заданием
 
 local TEXT_COLORS: { [string]: Color3 } = {
 	success = Color3.fromRGB(46, 204, 113),
-	error = Color3.fromRGB(231, 76, 60),
+	error = Color3.fromRGB(255, 99, 88),
 	info = Color3.fromRGB(255, 255, 255),
 }
 
@@ -26,7 +27,7 @@ screenGui.Parent = playerGui
 
 local container = Instance.new("Frame")
 container.AnchorPoint = Vector2.new(0.5, 0)
-container.Position = UDim2.new(0.5, 0, 0, 60)
+container.Position = UDim2.new(0.5, 0, 0, TOP_OFFSET)
 container.Size = UDim2.fromScale(0.9, 0.5)
 container.BackgroundTransparency = 1
 container.Parent = screenGui
@@ -54,7 +55,7 @@ local function show(text: string, kind: string)
 	label.BackgroundColor3 = Color3.fromRGB(25, 20, 35)
 	label.BackgroundTransparency = 0.25
 	label.Font = Enum.Font.GothamBold
-	label.TextSize = 22
+	label.TextSize = 20
 	label.TextWrapped = true
 	label.TextColor3 = TEXT_COLORS[kind] or TEXT_COLORS.info
 	label.Text = text
@@ -100,8 +101,3 @@ local function show(text: string, kind: string)
 end
 
 notifyEvent.OnClientEvent:Connect(show)
-
-show(
-	"Бери коробки на приёмке и раскладывай по ячейкам с той же буквой",
-	"info"
-)

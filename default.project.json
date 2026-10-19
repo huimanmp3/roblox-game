@@ -10,6 +10,12 @@
         "$className": "Folder",
         "Notify": {
           "$className": "RemoteEvent"
+        },
+        "Scan": {
+          "$className": "RemoteEvent"
+        },
+        "Effect": {
+          "$className": "RemoteEvent"
         }
       }
     },
