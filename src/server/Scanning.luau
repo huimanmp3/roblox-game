@@ -1,21 +1,21 @@
 --!strict
--- Сканер: выдача инструмента и обработка пиков (QR-код палета и товар из коробок).
+-- Сканер: выдача инструмента и клики им. Что делает клик, зависит от того, куда кликнули:
+-- QR-код палета, коробка на палете, коробка на столе или тележка у стола.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Boxes = require(script.Parent.Boxes)
+local Carts = require(script.Parent.Carts)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Forklift = require(script.Parent.Forklift)
 local Pallets = require(script.Parent.Pallets)
-local PlayerData = require(script.Parent.PlayerData)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
-local Totes = require(script.Parent.Totes)
 local notify = require(script.Parent.Notify)
 
 local scanEvent = ReplicatedStorage.Remotes.Scan
-local effectEvent = ReplicatedStorage.Remotes.Effect
 
-local SCAN_DISTANCE = 20 -- как далеко от своего стола можно пикать
+local SCAN_DISTANCE = 20 -- как далеко от своего стола можно кликать сканером
 local EMPTY_PALLET_LIFETIME = 2 -- сколько секунд пустой поддон стоит у стола
 
 local Scanning = {}
@@ -23,7 +23,7 @@ local Scanning = {}
 local function createScannerTool(): Tool
 	local tool = Instance.new("Tool")
 	tool.Name = "Сканер"
-	tool.ToolTip = "Кликай по QR-коду палета и по коробкам"
+	tool.ToolTip = "Кликай по QR-коду палета, по коробкам и тележкам"
 	tool.CanBeDropped = false
 	tool:SetAttribute("Scanner", true)
 
@@ -73,7 +73,11 @@ function Scanning.giveScanner(player: Player)
 		humanoid:EquipTool(tool)
 	end
 
-	notify(player, "Сканер в руке. Кликни им по QR-коду палета", "success")
+	notify(
+		player,
+		"Сканер в руке. Кликай им по палету, коробкам и тележкам",
+		"success"
+	)
 	Tasks.refresh(player)
 end
 
@@ -85,48 +89,54 @@ end
 
 local function finishPallet(player: Player, workTable: State.WorkTable, pallet: State.Pallet)
 	workTable.pallet = nil
-	notify(player, "Палет разобран! Грузчик везёт следующий", "success")
+	notify(player, "Палет разгружен! Грузчик везёт следующий", "success")
 	task.delay(EMPTY_PALLET_LIFETIME, function()
 		pallet.model:Destroy()
 	end)
 	Forklift.requestPallet(workTable)
 end
 
-local function pickItem(player: Player, workTable: State.WorkTable, pallet: State.Pallet, box: State.Box)
-	local tote = workTable.tote
-	if not tote then
-		notify(player, "Поставь на стол пустую тару", "error")
-		return
-	end
-	local toteCategory = tote.category
-	if tote.count > 0 and toteCategory and toteCategory.Id ~= pallet.category.Id then
+local function clickPallet(
+	player: Player,
+	session: State.Session,
+	workTable: State.WorkTable,
+	pallet: State.Pallet,
+	target: Instance
+)
+	if not pallet.scanned then
+		if target ~= pallet.qr then
+			notify(player, "Сначала отсканируй QR-код палета", "error")
+			return
+		end
+		Pallets.markScanned(pallet)
 		notify(
 			player,
-			"В таре товар другой категории. Отнеси её на буфер",
-			"error"
-		)
-		return
-	end
-	if tote.count >= Config.ToteCapacity then
-		notify(player, "Тара заполнена! Отнеси её на буфер", "error")
-		return
-	end
-
-	local from = box.part.Position
-	Pallets.takeItem(pallet, box)
-	Totes.add(tote, pallet.category)
-	PlayerData.addMoney(player, Config.ItemReward)
-	effectEvent:FireAllClients("item", from, tote.part.Position, pallet.category.Color)
-	effectEvent:FireClient(player, "reward", tote.part.Position, Config.ItemReward)
-
-	if tote.count >= Config.ToteCapacity then
-		notify(
-			player,
-			`Тара заполнена! Отнеси её на буфер «{pallet.category.Name}»`,
+			`Палет принят: {Pallets.itemsLeft(pallet)} шт., в основном «{pallet.mainCategory.Name}»`,
 			"success"
 		)
+		return
 	end
-	if Pallets.itemsLeft(pallet) == 0 then
+
+	local box = Pallets.findBox(pallet, target)
+	if not box then
+		return
+	end
+	if workTable.box then
+		notify(player, "На столе уже есть коробка. Сначала разбери её", "error")
+		return
+	end
+	if not State.handsFree(session) then
+		notify(player, "Сначала освободи руки", "error")
+		return
+	end
+	if not Pallets.isTop(pallet, box) then
+		notify(player, "Сначала сними коробки, которые стоят сверху", "error")
+		return
+	end
+
+	Pallets.removeBox(pallet, box)
+	Boxes.placeOnDesk(workTable, box)
+	if #pallet.boxes == 0 then
 		finishPallet(player, workTable, pallet)
 	end
 end
@@ -140,7 +150,7 @@ local function onScan(player: Player, target: unknown)
 		return
 	end
 
-	-- Защита от автокликеров: сервер сам следит за паузой между пиками
+	-- Защита от автокликеров: сервер сам следит за паузой между кликами
 	local now = os.clock()
 	if now - session.lastScan < Config.ScanCooldown then
 		return
@@ -148,35 +158,31 @@ local function onScan(player: Player, target: unknown)
 	session.lastScan = now
 
 	local workTable = session.workTable
-	local pallet = if workTable then workTable.pallet else nil
-	if not workTable or not pallet or not target:IsDescendantOf(pallet.model) then
+	if not workTable or not workTable.occupied then
 		return
+	end
+
+	local pallet = workTable.pallet
+	local box = workTable.box
+	local cart = Carts.findAtTable(workTable, target)
+	local onPallet = pallet ~= nil and target:IsDescendantOf(pallet.model)
+	local onBox = box ~= nil and (target == box.part or target:IsDescendantOf(box.part))
+	if not onPallet and not onBox and not cart then
+		return -- кликнули не по своему рабочему месту
 	end
 	if not State.isNear(player, workTable.desk, SCAN_DISTANCE) then
 		notify(player, "Подойди ближе к своему столу", "error")
 		return
 	end
 
-	if not pallet.scanned then
-		if target ~= pallet.qr then
-			notify(player, "Сначала отсканируй QR-код палета", "error")
-			return
-		end
-		Pallets.markScanned(pallet)
-		notify(
-			player,
-			`Палет принят: «{pallet.category.Name}», {Pallets.itemsLeft(pallet)} шт.`,
-			"success"
-		)
-		Tasks.refresh(player)
-		return
+	if pallet and onPallet then
+		clickPallet(player, session, workTable, pallet, target)
+	elseif onBox then
+		Boxes.click(player, workTable)
+	elseif cart then
+		Carts.putItem(player, cart)
 	end
-
-	local box = Pallets.findBox(pallet, target)
-	if box then
-		pickItem(player, workTable, pallet, box)
-		Tasks.refresh(player)
-	end
+	Tasks.refresh(player)
 end
 
 function Scanning.start()

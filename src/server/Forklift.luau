@@ -139,7 +139,7 @@ local function arrive(workTable: State.WorkTable, pallet: State.Pallet, spotGrou
 	if owner then
 		notify(
 			owner,
-			`Палет приехал: «{pallet.category.Name}». Отсканируй его QR-код`,
+			`Палет приехал, в основном «{pallet.mainCategory.Name}». Отсканируй его QR-код`,
 			"success"
 		)
 		Tasks.refresh(owner)
@@ -148,7 +148,7 @@ end
 
 local function deliver(workTable: State.WorkTable, delivery: number)
 	local spotGround = groundOf(workTable.palletSpot)
-	local pallet = Pallets.create(Config.Categories[math.random(#Config.Categories)])
+	local pallet = Pallets.create()
 
 	local dock = nearestDock(spotGround.Position)
 	if not dock then

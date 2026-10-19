@@ -4,9 +4,7 @@
 -- Текст уходит клиенту в атрибут Task, цель стрелки — в ObjectValue GuideTarget.
 
 local CollectionService = game:GetService("CollectionService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Config = require(ReplicatedStorage.Shared.Config)
 local Pallets = require(script.Parent.Pallets)
 local State = require(script.Parent.State)
 
@@ -36,13 +34,52 @@ local function nearestTagged(tag: string, position: Vector3): BasePart?
 	return best
 end
 
-function Tasks.findBufferZone(categoryId: string): BasePart?
+local function findBufferZone(categoryId: string): BasePart?
 	for _, instance in CollectionService:GetTagged("BufferZone") do
 		if instance:IsA("BasePart") and instance:GetAttribute("Category") == categoryId then
 			return instance
 		end
 	end
 	return nil
+end
+
+-- Что у игрока в руках, то и задание
+local function describeHands(session: State.Session, workTable: State.WorkTable): (string?, BasePart?, string)
+	local desk = workTable.desk
+	local tableLabel = `Стол №{workTable.number}`
+
+	local cart = session.cart
+	if cart then
+		local category = cart.category
+		if cart.count > 0 and category then
+			return `Отвези тележку на буфер «{category.Name}»`,
+				findBufferZone(category.Id),
+				`Буфер «{category.Name}»`
+		end
+		if State.freeCartSpot(workTable) then
+			return `Поставь тележку у своего стола №{workTable.number} (E у стола)`,
+				desk,
+				tableLabel
+		end
+		return "У стола нет места: верни пустую тележку на стоянку",
+			nearestTagged("CartParking", desk.Position),
+			"Тележки"
+	end
+
+	if session.cardboard then
+		return "Отнеси картон в контейнер «КАРТОН» в начале ряда",
+			nearestTagged("CardboardBin", desk.Position),
+			"Картон"
+	end
+
+	local held = session.held
+	if held then
+		return `В руке: {held.item.Name} («{held.category.Name}»). Кликни сканером по тележке для этой категории или по коробке, чтобы вернуть товар`,
+			desk,
+			tableLabel
+	end
+
+	return nil, nil, ""
 end
 
 -- Возвращает текст задания, цель стрелки и подпись над целью
@@ -60,93 +97,92 @@ local function describe(player: Player, session: State.Session): (string, BasePa
 			"Стол старших"
 	end
 
+	local desk = workTable.desk
 	local tableLabel = `Стол №{workTable.number}`
-	local carried = session.carrying
-	if carried then
-		local carriedCategory = carried.category
-		if carried.count > 0 and carriedCategory then
-			local name = carriedCategory.Name
-			return `Отнеси тару на буфер «{name}»`,
-				Tasks.findBufferZone(carriedCategory.Id),
-				`Буфер «{name}»`
-		end
-		return `Поставь тару на свой стол №{workTable.number}`, workTable.desk, tableLabel
+	if not workTable.occupied then
+		return `Иди к столу №{workTable.number} по стрелке и займи его`, desk, tableLabel
 	end
 
-	if not workTable.occupied then
-		return `Иди к столу №{workTable.number} по стрелке и займи его`,
-			workTable.desk,
-			tableLabel
+	local handsText, handsTarget, handsLabel = describeHands(session, workTable)
+	if handsText then
+		return handsText, handsTarget, handsLabel
 	end
 
 	-- Дальше вся работа идёт за столом: стрелка ведёт к нему, а у самого стола клиент её прячет
-	local desk = workTable.desk
-	local tote = workTable.tote
+	local box = workTable.box
 	local pallet = workTable.pallet
-	if not pallet then
-		if tote and tote.count > 0 then
-			return "Пока грузчик везёт палет, отнеси тару со стола на буфер",
-				desk,
-				tableLabel
-		end
-		return "Жди палет: грузчик уже едет к твоему столу", desk, tableLabel
+	if (box or pallet) and not State.hasScanner(player) then
+		return `Возьми сканер со стола №{workTable.number} (клавиша F)`, desk, tableLabel
 	end
 
-	if not State.hasScanner(player) then
-		return `Палет приехал! Возьми сканер со стола №{workTable.number} (клавиша F)`,
+	if box then
+		if not box.opened then
+			return "Вскрой коробку на столе: удерживай E", desk, tableLabel
+		end
+		if box.itemsLeft == 0 then
+			return "Коробка пустая: разрежь её, удерживая E", desk, tableLabel
+		end
+		if not State.hasCarts(workTable) then
+			return "Возьми пустую тележку на стоянке в начале ряда и поставь у стола",
+				nearestTagged("CartParking", desk.Position),
+				"Тележки"
+		end
+		return `Кликай сканером по коробке: достань товар и положи его в тележку. В коробке: {box.itemsLeft} шт.`,
 			desk,
 			tableLabel
 	end
 
+	if not pallet then
+		return "Жди палет: грузчик уже едет. Полные тележки пока можно отвезти на буфер",
+			desk,
+			tableLabel
+	end
 	if not pallet.scanned then
 		return "Возьми сканер в руку и кликни по QR-коду на палете",
 			desk,
 			tableLabel
 	end
-
-	local categoryName = pallet.category.Name
-	if not tote then
-		return "Возьми пустую тару на стеллаже «Тара» и поставь на стол",
-			nearestTagged("ToteRack", desk.Position),
-			"Тара"
-	end
-
-	local toteCategory = tote.category
-	if tote.count > 0 and toteCategory and toteCategory.Id ~= pallet.category.Id then
-		return `В таре товар «{toteCategory.Name}». Отнеси её на буфер и возьми новую`,
-			desk,
-			tableLabel
-	end
-
-	if tote.count >= Config.ToteCapacity then
-		return `Тара заполнена! Возьми её со стола и отнеси на буфер «{categoryName}»`,
-			desk,
-			tableLabel
-	end
-
 	local left = Pallets.itemsLeft(pallet)
-	return `Кликай сканером по коробкам. Тара: {tote.count}/{Config.ToteCapacity}, на палете: {left} шт.`,
+	return `Кликни сканером по верхней коробке на палете, чтобы поставить её на стол. На палете: {left} шт.`,
 		desk,
 		tableLabel
 end
 
--- Подсказка на рабочем столе зависит от того, что сейчас нужно его хозяину
-function Tasks.updateDeskPrompt(workTable: State.WorkTable)
-	local prompt = workTable.deskPrompt
+-- Подсказки на столе, коробке и тележках зависят от того, что сейчас в руках у хозяина стола
+function Tasks.updatePrompts(workTable: State.WorkTable)
 	local owner = workTable.owner
 	local session = if owner then State.sessions[owner] else nil
+	local handsFree = session ~= nil and State.handsFree(session)
 
-	local action: string? = nil
+	local deskAction: string? = nil
 	if session and not workTable.occupied then
-		action = "Занять стол"
-	elseif session and session.carrying and not workTable.tote then
-		action = "Поставить тару"
+		deskAction = "Занять стол"
+	elseif session and session.cart and State.freeCartSpot(workTable) then
+		deskAction = "Поставить тележку"
+	end
+	if deskAction then
+		workTable.deskPrompt.ActionText = deskAction
+	end
+	workTable.deskPrompt.Enabled = deskAction ~= nil
+
+	local box = workTable.box
+	local boxPrompt = if box then box.prompt else nil
+	if box and boxPrompt then
+		local boxAction: string? = nil
+		if handsFree and not box.opened then
+			boxAction = "Вскрыть коробку"
+		elseif handsFree and box.itemsLeft == 0 then
+			boxAction = "Разрезать коробку"
+		end
+		if boxAction then
+			boxPrompt.ActionText = boxAction
+		end
+		boxPrompt.Enabled = boxAction ~= nil
 	end
 
-	if action then
-		prompt.ActionText = action
+	for _, cart in workTable.carts do
+		cart.prompt.Enabled = handsFree
 	end
-	prompt.Enabled = action ~= nil
 end
 
 function Tasks.refresh(player: Player)
@@ -170,7 +206,7 @@ function Tasks.refresh(player: Player)
 
 	local workTable = session.workTable
 	if workTable then
-		Tasks.updateDeskPrompt(workTable)
+		Tasks.updatePrompts(workTable)
 	end
 end
 

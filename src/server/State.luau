@@ -1,5 +1,5 @@
 --!strict
--- Общее состояние приёмки: столы, палеты, тары и данные игроков.
+-- Общее состояние приёмки: столы, палеты, коробки, тележки и данные игроков.
 -- Модули меняют его, а Tasks по нему решает, какое задание показать игроку.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -7,29 +7,43 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 
 export type Category = Config.Category
+export type ItemType = Config.ItemType
 
 export type Box = {
 	part: BasePart,
+	category: Category,
+	item: ItemType,
 	itemsLeft: number,
+	-- Место на палете: стопка (1–9) и ярус (1 — нижний)
 	column: number,
 	level: number,
+	opened: boolean,
+	prompt: ProximityPrompt?, -- появляется, когда коробку ставят на стол
 }
 
 export type Pallet = {
 	model: Model,
-	qr: BasePart,
-	category: Category,
+	qr: BasePart?, -- исчезает после сканирования
+	mainCategory: Category,
 	boxes: { Box },
 	scanned: boolean,
 }
 
-export type Tote = {
-	part: BasePart,
+export type Cart = {
+	model: Model,
+	body: BasePart,
 	prompt: ProximityPrompt,
 	labels: { TextLabel },
 	bar: Frame,
-	category: Category?,
+	category: Category?, -- категория первого положенного товара
 	count: number,
+	wrong: number, -- сколько товара не той категории: за него штрафуют на буфере
+}
+
+export type HeldItem = {
+	item: ItemType,
+	category: Category,
+	part: BasePart,
 }
 
 export type WorkTable = {
@@ -37,12 +51,14 @@ export type WorkTable = {
 	model: Model,
 	desk: BasePart,
 	palletSpot: BasePart,
-	toteSpot: BasePart,
+	boxSpot: BasePart,
+	cartSpots: { BasePart },
 	deskPrompt: ProximityPrompt,
 	owner: Player?,
 	occupied: boolean,
 	pallet: Pallet?,
-	tote: Tote?,
+	box: Box?, -- коробка на столе
+	carts: { [number]: Cart }, -- тележки у стола по номеру места
 	palletOnTheWay: boolean,
 	-- Растёт каждый раз, когда стол выдают или освобождают.
 	-- По нему погрузчик понимает, что палет уже не нужен.
@@ -52,7 +68,10 @@ export type WorkTable = {
 export type Session = {
 	uniform: boolean,
 	workTable: WorkTable?,
-	carrying: Tote?,
+	-- Что у игрока в руках: тележка, разрезанный картон или товар после пика
+	cart: Cart?,
+	cardboard: BasePart?,
+	held: HeldItem?,
 	lastScan: number,
 }
 
@@ -72,7 +91,9 @@ function State.session(player: Player): Session
 	local session: Session = {
 		uniform = false,
 		workTable = nil,
-		carrying = nil,
+		cart = nil,
+		cardboard = nil,
+		held = nil,
 		lastScan = 0,
 	}
 	-- Для игрока, который уже вышел, данные не сохраняем
@@ -80,6 +101,24 @@ function State.session(player: Player): Session
 		State.sessions[player] = session
 	end
 	return session
+end
+
+function State.handsFree(session: Session): boolean
+	return session.cart == nil and session.cardboard == nil and session.held == nil
+end
+
+-- Номер свободного места для тележки у стола
+function State.freeCartSpot(workTable: WorkTable): number?
+	for index in workTable.cartSpots do
+		if not workTable.carts[index] then
+			return index
+		end
+	end
+	return nil
+end
+
+function State.hasCarts(workTable: WorkTable): boolean
+	return next(workTable.carts) ~= nil
 end
 
 -- Корневая часть персонажа, если он есть и жив

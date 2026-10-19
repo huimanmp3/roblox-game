@@ -1,40 +1,57 @@
 --!strict
--- Перенос предмета в руках: деталь крепится перед персонажем.
+-- Перенос предмета в руках: деталь или модель крепится перед персонажем.
+-- У модели должна быть PrimaryPart, к ней и цепляется сварка.
 
-local CARRY_OFFSET = CFrame.new(0, 0.3, -1.9) -- перед грудью персонажа
+local DEFAULT_OFFSET = CFrame.new(0, 0.3, -1.9) -- перед грудью персонажа
 local WELD_NAME = "CarryWeld"
 
 local Carry = {}
 
-function Carry.attach(part: BasePart, character: Model): boolean
+local function mainPart(object: PVInstance): BasePart?
+	if object:IsA("BasePart") then
+		return object
+	end
+	if object:IsA("Model") then
+		return object.PrimaryPart
+	end
+	return nil
+end
+
+-- offset задаёт положение относительно HumanoidRootPart
+function Carry.attach(object: PVInstance, character: Model, offset: CFrame?): boolean
 	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root or not root:IsA("BasePart") then
+	local main = mainPart(object)
+	if not root or not root:IsA("BasePart") or not main then
 		return false
 	end
 
-	Carry.detach(part)
-	part.CFrame = root.CFrame * CARRY_OFFSET
-	part.CanCollide = false
-	part.Massless = true
-	part.Anchored = false
+	Carry.detach(object)
+	object:PivotTo(root.CFrame * (offset or DEFAULT_OFFSET))
+	main.CanCollide = false
+	main.Massless = true
+	main.Anchored = false
 
 	local weld = Instance.new("WeldConstraint")
 	weld.Name = WELD_NAME
 	weld.Part0 = root
-	weld.Part1 = part
-	weld.Parent = part
+	weld.Part1 = main
+	weld.Parent = main
 
-	part.Parent = character
+	object.Parent = character
 	return true
 end
 
--- Отцепляет деталь и закрепляет её на месте
-function Carry.detach(part: BasePart)
-	local weld = part:FindFirstChild(WELD_NAME)
+-- Отцепляет предмет и закрепляет его на месте
+function Carry.detach(object: PVInstance)
+	local main = mainPart(object)
+	if not main then
+		return
+	end
+	local weld = main:FindFirstChild(WELD_NAME)
 	if weld then
 		weld:Destroy()
 	end
-	part.Anchored = true
+	main.Anchored = true
 end
 
 return Carry

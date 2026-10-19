@@ -1,5 +1,6 @@
 --!strict
--- Блок К4, приёмка: стол старших, рабочие столы, стеллажи с тарой, ворота для погрузчиков и буфер.
+-- Блок К4, приёмка: стол старших, рабочие столы, стоянки тележек, контейнеры для картона,
+-- ворота для погрузчиков и буфер.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -11,7 +12,9 @@ local ROWS_Z = { -50, -10, 30 }
 local TABLES_X = { 35, 57, 79, 101, 123 }
 -- Проезд погрузчика за рядом столов. Совпадает с APPROACH_DISTANCE в Forklift.
 local AISLE_OFFSET = 10
-local TOTE_RACK_X = 18
+local ROW_END_X = 18 -- начало ряда: стоянка тележек и контейнер для картона
+local CART_SPOTS_X = { -7, 0, 7 } -- места для тележек за спиной игрока
+local CART_SPOTS_Z = -9
 local DOCK_X = 143
 local EAST_WALL_X = 150
 local BUFFER_MIN_X, BUFFER_MAX_X = 22, 140
@@ -22,12 +25,15 @@ local BUFFER_SIGN_Z = 98 -- общая вывеска «БУФЕР» у севе
 local DESK_COLOR = Color3.fromRGB(235, 235, 240)
 local DARK_COLOR = Color3.fromRGB(35, 35, 40)
 local SPOT_COLOR = Color3.fromRGB(241, 196, 15)
-local TOTE_COLOR = Color3.fromRGB(35, 60, 120)
+local CART_COLOR = Color3.fromRGB(150, 155, 160)
+local BIN_COLOR = Color3.fromRGB(70, 75, 85)
+local CARDBOARD_COLOR = Color3.fromRGB(196, 154, 108)
 local SKIN_COLOR = Color3.fromRGB(234, 184, 146)
 
 local Receiving = {}
 
--- Рабочий стол. Игрок стоит со стороны -Z, палет ставят справа (+X), проезд погрузчика — за столом (+Z).
+-- Рабочий стол. Игрок стоит со стороны -Z, палет ставят справа (+X), проезд погрузчика — за столом (+Z),
+-- тележки — за спиной игрока.
 local function buildTable(number: number, base: CFrame, parent: Instance)
 	local unit = Instance.new("Model")
 	unit.Name = `Table{number}`
@@ -40,9 +46,9 @@ local function buildTable(number: number, base: CFrame, parent: Instance)
 		unit
 	)
 	Parts.part({
-		Name = "ToteSpot",
-		Size = Vector3.new(2.8, 0.05, 2.1),
-		CFrame = base * CFrame.new(-2, 3.525, 0),
+		Name = "BoxSpot",
+		Size = Vector3.new(2, 0.05, 2),
+		CFrame = base * CFrame.new(-1.5, 3.525, 0),
 		Color = Color3.fromRGB(70, 70, 80),
 		CanCollide = false,
 	}, unit)
@@ -93,6 +99,19 @@ local function buildTable(number: number, base: CFrame, parent: Instance)
 		Transparency = 0.3,
 		CanCollide = false,
 	}, unit)
+
+	for index, x in CART_SPOTS_X do
+		local spot = Parts.part({
+			Name = "CartSpot",
+			Size = Vector3.new(3.4, 0.05, 5.4),
+			CFrame = base * CFrame.new(x, 0.025, CART_SPOTS_Z),
+			Color = SPOT_COLOR,
+			Transparency = 0.6,
+			CanCollide = false,
+			CanQuery = false,
+		}, unit)
+		spot:SetAttribute("Index", index)
+	end
 end
 
 -- Стол старших: здесь игрок получает номер своего стола
@@ -133,33 +152,65 @@ local function buildSeniorDesk(parent: Instance)
 	}, parent)
 end
 
--- Стопка пустых тар. Невидимая зона с тегом ToteRack держит подсказку «Взять пустую тару».
-local function buildToteRack(base: CFrame, parent: Instance)
-	local rack = Instance.new("Model")
-	rack.Name = "ToteRack"
-	rack.Parent = parent
-
-	for _, z in { 0, 2.2 } do
-		for level = 0, 3 do
+-- Тележка для красоты: корпус на колёсах, как настоящие на стоянке
+local function buildDecorCart(base: CFrame, parent: Instance)
+	Parts.part({
+		Name = "Cart",
+		Size = Vector3.new(3, 3.4, 5),
+		CFrame = base * CFrame.new(0, 2.5, 0),
+		Color = CART_COLOR,
+		Material = Enum.Material.Metal,
+	}, parent)
+	for _, x in { -1.2, 1.2 } do
+		for _, z in { -2, 2 } do
 			Parts.part({
-				Name = "StackedTote",
-				Size = Vector3.new(2.6, 1.4, 1.9),
-				CFrame = base * CFrame.new(0, 0.7 + level * 1.45, z),
-				Color = TOTE_COLOR,
-			}, rack)
+				Name = "Wheel",
+				Shape = Enum.PartType.Cylinder,
+				Size = Vector3.new(0.4, 0.7, 0.7),
+				CFrame = base * CFrame.new(x, 0.35, z),
+				Color = DARK_COLOR,
+			}, parent)
 		end
 	end
+end
 
-	local zone = Parts.part({
-		Name = "ToteRackZone",
-		Size = Vector3.new(4, 6, 5),
-		CFrame = base * CFrame.new(0, 3, 1.1),
-		Transparency = 1,
+-- Начало ряда: стоянка пустых тележек и контейнер для разрезанных коробок
+local function buildRowEnd(base: CFrame, parent: Instance)
+	local rowEnd = Instance.new("Model")
+	rowEnd.Name = "RowEnd"
+	rowEnd.Parent = parent
+
+	local parking = Parts.part({
+		Name = "CartParking",
+		Size = Vector3.new(7, 0.05, 12),
+		CFrame = base * CFrame.new(0, 0.025, -9),
+		Color = CART_COLOR,
+		Transparency = 0.5,
 		CanCollide = false,
 		CanQuery = false,
-	}, rack)
-	Parts.tag(zone, "ToteRack")
-	Parts.sign("ТАРА", base * CFrame.new(0, 7.5, 1.1), Vector3.new(4, 1.6, 0.2), TOTE_COLOR, rack)
+	}, rowEnd)
+	Parts.tag(parking, "CartParking")
+	for _, x in { -1.7, 1.7 } do
+		buildDecorCart(base * CFrame.new(x, 0, -9), rowEnd)
+	end
+	Parts.sign("ТЕЛЕЖКИ", base * CFrame.new(0, 7.5, -9), Vector3.new(6, 1.6, 0.2), DARK_COLOR, rowEnd)
+
+	local bin = Parts.part({
+		Name = "CardboardBin",
+		Size = Vector3.new(5, 4, 4),
+		CFrame = base * CFrame.new(0, 2, 1),
+		Color = BIN_COLOR,
+		Material = Enum.Material.Metal,
+	}, rowEnd)
+	Parts.tag(bin, "CardboardBin")
+	Parts.part({
+		Name = "CardboardPile",
+		Size = Vector3.new(4.4, 0.3, 3.4),
+		CFrame = base * CFrame.new(0, 4.15, 1),
+		Color = CARDBOARD_COLOR,
+		Material = Enum.Material.Cardboard,
+	}, rowEnd)
+	Parts.sign("КАРТОН", base * CFrame.new(0, 6.5, 1), Vector3.new(5, 1.6, 0.2), BIN_COLOR, rowEnd)
 end
 
 -- Ворота в восточной стене: отсюда выезжают погрузчики
@@ -225,7 +276,7 @@ function Receiving.build(parent: Instance)
 			number += 1
 			buildTable(number, CFrame.new(x, F, z), model)
 		end
-		buildToteRack(CFrame.new(TOTE_RACK_X, F, z), model)
+		buildRowEnd(CFrame.new(ROW_END_X, F, z), model)
 		buildDock(z + AISLE_OFFSET, rowIndex, model)
 	end
 

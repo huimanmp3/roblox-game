@@ -27,7 +27,8 @@ end
 function PlayerData.addMoney(player: Player, amount: number)
 	local money = getMoneyValue(player)
 	if money then
-		money.Value += amount
+		-- Штраф не уводит в минус
+		money.Value = math.max(0, money.Value + amount)
 	end
 end
 
