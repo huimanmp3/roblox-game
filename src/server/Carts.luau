@@ -5,10 +5,11 @@
 -- задаёт первое, что в неё положили. Товарную везут на товарный буфер своей категории,
 -- картонную — в буфер мусора. В начале каждого ряда стоит общая тара для картона
 -- (заполнилась — её сразу меняют на пустую), можно поставить и свою у стола.
--- Мезонин (К2): с товарного буфера тару берут на раскладку, в зоне пустых тар мезонина — на сборку,
+-- Мезонин (К2): тары с товаром карщики и NPC привозят с товарного буфера в зону раскладки у мезонина,
+-- там их берут раскладчики. В зоне пустых тар мезонина тару берут на сборку,
 -- собранный заказ сдают в зоне отгрузки.
--- Операции не зависят друг от друга: раскладчик получает свою новую тару, а не чужую,
--- тары, сданные в буферы, просто ждут, пока их увезёт NPC.
+-- Операции не зависят друг от друга: в зоне раскладки всегда есть тары (если мало — их довозят сразу),
+-- тары, сданные в буферы, увозит NPC.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -36,7 +37,8 @@ local INTERACT_DISTANCE = 10
 local GOODS_BUFFER_MAX = 6
 local WASTE_BUFFER_MAX = 12
 local K2_EMPTY_MAX = 16
-local GOODS_BUFFER_MIN = 2 -- столько тар всегда стоит на каждой зоне товарного буфера
+local PUTAWAY_MAX = 16
+local PUTAWAY_MIN = 4 -- столько тар всегда стоит в зоне раскладки, чтобы раскладчики не ждали карщиков
 
 local Carts = {}
 
@@ -49,15 +51,6 @@ local function categoryName(id: unknown): string
 		end
 	end
 	return "?"
-end
-
-local function categoryById(id: unknown): Config.Category?
-	for _, category in Config.Categories do
-		if category.Id == id then
-			return category
-		end
-	end
-	return nil
 end
 
 -- Подсказка «до» зоны: зона большая, поэтому считаем от её центра до края с запасом
@@ -96,9 +89,9 @@ local function sharedSpotOf(cart: State.Cart): BasePart?
 	return nil
 end
 
-local function inGoodsBuffer(cart: State.Cart): boolean
+local function inPutawayZone(cart: State.Cart): boolean
 	local zone = Grids.zoneOf(cart)
-	return zone ~= nil and CollectionService:HasTag(zone, "BufferZone")
+	return zone ~= nil and CollectionService:HasTag(zone, "PutawayZone")
 end
 
 function Carts.refresh(cart: State.Cart)
@@ -108,13 +101,13 @@ function Carts.refresh(cart: State.Cart)
 		cart.prompt.ActionText = "Бросить картон"
 		cart.prompt.ObjectText = "Общая тара для картона"
 		cart.prompt.Enabled = true
-	elseif inGoodsBuffer(cart) then
+	elseif inPutawayZone(cart) then
 		local category = cart.category
 		cart.prompt.ActionText = "Взять на раскладку"
-		cart.prompt.ObjectText = `Буфер «{if category then category.Name else "Товар"}»`
+		cart.prompt.ObjectText = `{if category then category.Name else "Товар"} · {cart.count} шт.`
 		cart.prompt.Enabled = true
 	elseif Grids.zoneOf(cart) then
-		-- Тары в буфере мусора и в зоне пустых тар мезонина просто ждут, пока их увезут
+		-- Тары в остальных буферах просто ждут, пока их увезут
 		cart.prompt.Enabled = false
 	end
 end
@@ -303,11 +296,10 @@ local function onSharedCart(player: Player, cart: State.Cart)
 	end
 end
 
-local generateGoodsCart: (Config.Category) -> State.Cart
-local refillGoodsBuffers: () -> ()
+local refillPutaway: () -> ()
 
--- Тара на товарном буфере: раскладчик получает свою новую тару с товаром этой категории
-local function onGoodsBufferCart(player: Player, cart: State.Cart)
+-- Тара в зоне раскладки: раскладчик берёт её и везёт по ячейкам мезонина
+local function onPutawayCart(player: Player, cart: State.Cart)
 	if not State.isNear(player, cart.body, INTERACT_DISTANCE) then
 		return
 	end
@@ -319,29 +311,25 @@ local function onGoodsBufferCart(player: Player, cart: State.Cart)
 		notify(player, "Сначала закончи то, что делаешь сейчас", "error")
 		return
 	end
-	local category = cart.category
-	if not category then
-		return
-	end
 
-	local fresh = generateGoodsCart(category)
-	if not push(player, fresh) then
-		fresh.model:Destroy()
+	local zone = Grids.zoneOf(cart)
+	Grids.remove(cart)
+	if not push(player, cart) then
+		if zone then
+			placeInGrid(cart, zone, PUTAWAY_MAX)
+		end
 		return
 	end
-	-- Тара с буфера уходит вместе с раскладчиком, на её место привозят новую
-	Grids.remove(cart)
-	cart.model:Destroy()
-	refillGoodsBuffers()
-	Jobs.startPutaway(player, fresh)
+	Jobs.startPutaway(player, cart)
+	refillPutaway()
 	Tasks.refresh(player)
 end
 
 local function onCartPrompt(player: Player, cart: State.Cart)
 	if sharedSpotOf(cart) then
 		onSharedCart(player, cart)
-	elseif inGoodsBuffer(cart) then
-		onGoodsBufferCart(player, cart)
+	elseif inPutawayZone(cart) then
+		onPutawayCart(player, cart)
 	else
 		onOwnCart(player, cart)
 	end
@@ -475,7 +463,7 @@ local function deliverGoods(player: Player, zone: BasePart)
 	if not cart then
 		notify(
 			player,
-			"Здесь стоят тары с товаром: их берут на раскладку по мезонину",
+			"Сюда приёмка сдаёт тары с товаром, отсюда их везут на мезонин",
 			"info"
 		)
 		return
@@ -522,6 +510,8 @@ local function deliverGoods(player: Player, zone: BasePart)
 	table.clear(cart.wrongPrices)
 	stopPushing(player, cart)
 	placeInGrid(cart, zone, GOODS_BUFFER_MAX)
+	-- Отсюда тару в зону раскладки у мезонина увозит NPC-тягач
+	Hauling.add(cart, "goods")
 	notify(player, `Тара сдана на буфер «{category.Name}»: {cart.count} шт.`, "success")
 
 	Rating.addPoints(player, Config.Rating.Points.CartDelivered)
@@ -646,7 +636,7 @@ local function onShipping(player: Player, zone: BasePart)
 	if not Jobs.isOrderComplete(job) then
 		notify(
 			player,
-			"Заказ ещё не собран: смотри задание вверху экрана",
+			"Заказ ещё не собран: смотри задание в панели справа",
 			"error"
 		)
 		return
@@ -691,8 +681,12 @@ function Carts.cleanupTable(workTable: State.WorkTable)
 	table.clear(workTable.carts)
 end
 
--- Тара с товаром одной категории для раскладки
-generateGoodsCart = function(category: Config.Category): State.Cart
+-- Тара с товаром одной категории для раскладки (категория случайная, если не задана)
+function Carts.generateGoodsCart(category: Config.Category?): State.Cart
+	if not category then
+		category = Config.Categories[math.random(#Config.Categories)]
+	end
+	assert(category, "нет категорий товара")
 	local cart = newCart()
 	cart.kind = "goods"
 	cart.category = category
@@ -712,15 +706,14 @@ generateGoodsCart = function(category: Config.Category): State.Cart
 	return cart
 end
 
--- На каждой зоне товарного буфера всегда стоит несколько тар, чтобы раскладчикам было что взять
-refillGoodsBuffers = function()
-	for _, zone in CollectionService:GetTagged("BufferZone") do
-		local category = categoryById(zone:GetAttribute("Category"))
-		if zone:IsA("BasePart") and category then
-			while Grids.count(zone) < GOODS_BUFFER_MIN do
-				placeInGrid(generateGoodsCart(category), zone, GOODS_BUFFER_MAX)
-			end
-		end
+-- В зоне раскладки всегда стоит несколько тар: если карщики не успели, их сразу довозит соседняя смена
+refillPutaway = function()
+	local zone = firstTagged("PutawayZone")
+	if not zone then
+		return
+	end
+	while Grids.count(zone) < PUTAWAY_MIN do
+		placeInGrid(Carts.generateGoodsCart(), zone, PUTAWAY_MAX)
 	end
 end
 
@@ -775,7 +768,16 @@ function Carts.start()
 	-- В начале каждого ряда всегда стоит общая тара для картона
 	forTagged("CardboardSpot", placeSharedCart)
 
-	refillGoodsBuffers()
+	-- Тары с товаром, которые довезли карщики или NPC, встают в зону раскладки
+	Hauling.onDelivered("goods", function(cart)
+		local zone = firstTagged("PutawayZone")
+		if zone then
+			placeInGrid(cart, zone, PUTAWAY_MAX)
+		else
+			cart.model:Destroy()
+		end
+	end)
+	refillPutaway()
 end
 
 return Carts

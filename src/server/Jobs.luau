@@ -80,7 +80,7 @@ function Jobs.startPicking(player: Player, cart: State.Cart): boolean
 	}
 	notify(
 		player,
-		`Заказ №{number}: {#lines} товаров. Задание — вверху экрана`,
+		`Заказ №{number}: {#lines} товаров. Задание — в панели справа`,
 		"success"
 	)
 	return true

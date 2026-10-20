@@ -103,32 +103,45 @@ local function describeNoCardboardTarget(workTable: State.WorkTable): (string, B
 	return text, nearestTagged("CartParking", workTable.desk.Position), "Пустые тары"
 end
 
--- Карщик на тягаче: где цеплять тары и куда везти паровоз
+-- Погрузка нужного вида тар
+local function pickupFor(kind: string): BasePart?
+	for _, instance in CollectionService:GetTagged("TrainPickup") do
+		if instance:IsA("BasePart") and instance:GetAttribute("Kind") == kind then
+			return instance
+		end
+	end
+	return nil
+end
+
+-- Карщик на тягаче: заявка диспетчера — где цеплять тары и куда везти паровоз
 local function describeTugger(tugger: State.Tugger): (string, BasePart?, string)
 	if tugger.seat.Occupant == nil then
 		return "Сядь в тягач (E у тягача) или сдай его на стоянке тягачей",
 			tugger.chassis,
 			"Тягач"
 	end
-
-	local count = #tugger.carts
-	local max = Config.Tugger.MaxCarts
-	if count > 0 then
-		local drop = Hauling.dropPoint(tugger.kind or "")
-		local more = if count < max then ` Можно прицепить ещё {max - count}.` else ""
-		if tugger.kind == "cardboard" then
-			local text =
-				`Паровоз с картоном ({count}/{max}): вези на утилизацию в К2 через ворота для техники и сдай (E).{more}`
-			return text, drop, "Утилизация"
-		end
-		local text =
-			`Паровоз пустых тар ({count}/{max}): вези в приём пустых тар у буфера К4 и сдай (E).{more}`
-		return text, drop, "Приём пустых тар"
+	local order = tugger.order
+	local route = if order then (Config.Tugger.Routes :: any)[order.kind] else nil
+	if not order or not route then
+		return "Жди заявку диспетчера", nil, ""
 	end
 
+	local timer = ""
+	if order.urgent then
+		local left = math.ceil(order.deadline - os.clock())
+		timer = if left > 0
+			then ` СРОЧНО: осталось {left} сек!`
+			else " Срочная заявка просрочена: бонус будет обычный."
+	end
+	local count = #tugger.carts
+	if count < order.count then
+		local text =
+			`Заявка «{route.Name}»: прицепи {order.count} тар ({count}/{order.count}). Погрузка: {route.From}, жми E на тягаче.{timer}`
+		return text, pickupFor(order.kind), "Погрузка"
+	end
 	local text =
-		"Подъезжай к синей погрузке и цепляй тары (E): картон — у буфера мусора К4, пустые тары — у зоны пустых тар мезонина"
-	return text, nearestTagged("TrainPickup", tugger.chassis.Position), "Погрузка тягачей"
+		`Заявка «{route.Name}»: паровоз собран ({count}/{order.count}). Вези: {route.To}, там жми E на тягаче.{timer}`
+	return text, Hauling.dropPoint(order.kind), "Сдача паровоза"
 end
 
 -- Задание на мезонине: раскладка или сборка
@@ -196,11 +209,9 @@ local function describe(player: Player, session: State.Session): (string, BasePa
 		return describeJob(job)
 	end
 	if operation == "putaway" then
-		local root = State.getRoot(player)
-		local buffer = if root then nearestTagged("BufferZone", root.Position) else firstTagged("BufferZone")
-		return "Возьми тару с товаром на товарном буфере К4 (E у тары)",
-			buffer,
-			"Товарный буфер"
+		return "Возьми тару с товаром в зоне раскладки у мезонина (E у тары)",
+			firstTagged("PutawayZone"),
+			"Зона раскладки"
 	elseif operation == "picking" then
 		return "Возьми тару на сборку в зоне пустых тар мезонина (E)",
 			firstTagged("K2EmptyCarts"),

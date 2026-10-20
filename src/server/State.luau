@@ -72,6 +72,14 @@ export type Job = {
 	lines: { OrderLine },
 }
 
+-- Заявка диспетчера карщику: какие тары везти (ключ из Config.Tugger.Routes) и сколько
+export type TuggerOrder = {
+	kind: string,
+	count: number,
+	urgent: boolean,
+	deadline: number, -- до какого os.clock() нужно успеть со срочной заявкой
+}
+
 -- Тягач карщика с «паровозом» из тар
 export type Tugger = {
 	model: Model,
@@ -80,7 +88,8 @@ export type Tugger = {
 	owner: Player,
 	prompt: ProximityPrompt, -- подсказка на тягаче: сесть, прицепить тару, сдать паровоз или тягач
 	carts: { Cart }, -- прицепленные тары по порядку от тягача
-	kind: string?, -- что везёт паровоз: "cardboard" или "empty"
+	kind: string?, -- что везёт паровоз: "goods", "cardboard" или "empty"
+	order: TuggerOrder?,
 	idleSince: number?, -- с какого момента в тягаче никто не сидит
 }
 

@@ -1,9 +1,10 @@
 --!strict
 -- Логистика карщиков: стоянка тягачей в центральном проходе, дорога вдоль северной стены
--- (через ворота для техники в К2), погрузка тягачей у буфера мусора К4 и у зоны пустых тар мезонина,
+-- (через ворота для техники в К2), погрузки тягачей, зона раскладки у мезонина,
 -- утилизация мусора в углу К2 и приём пустых тар у буфера К4.
 -- Погрузки помечены тегом TrainPickup, места сдачи паровоза — тегом TrainDrop.
--- У обоих атрибут Kind: "cardboard" (тары с картоном) или "empty" (пустые тары).
+-- У обоих атрибут Kind: "goods" (тары с товаром), "cardboard" (с картоном) или "empty" (пустые).
+-- Зона раскладки (PutawayZone) — это и место сдачи товара карщиками, и место, где раскладчики берут тары.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -19,6 +20,7 @@ local DEPOT_COLOR = Color3.fromRGB(230, 126, 34)
 local WASTE_COLOR = Color3.fromRGB(150, 110, 70)
 local EMPTY_COLOR = Color3.fromRGB(150, 155, 160)
 local PICKUP_COLOR = Color3.fromRGB(52, 152, 219)
+local PUTAWAY_COLOR = Color3.fromRGB(41, 128, 185)
 local DARK_COLOR = Color3.fromRGB(50, 50, 60)
 local CARDBOARD_COLOR = Color3.fromRGB(196, 154, 108)
 
@@ -114,6 +116,21 @@ local function buildPickup(model: Model, name: string, kind: string, from: Vecto
 	Parts.sign(title, CFrame.new(center.X, F + 7, to.Y + 0.5), Vector3.new(22, 2.2, 0.3), PICKUP_COLOR, model)
 end
 
+-- Зона раскладки у мезонина: карщики и NPC привозят сюда тары с товаром, раскладчики их забирают
+local function buildPutawayZone(model: Model)
+	local putaway = zone(model, "PutawayZone", Vector2.new(-146, 118), Vector2.new(-106, 158), PUTAWAY_COLOR)
+	putaway:SetAttribute("Kind", "goods")
+	Parts.tag(putaway, "PutawayZone")
+	Parts.tag(putaway, "TrainDrop")
+	Parts.sign(
+		"ЗОНА РАСКЛАДКИ · ТОВАР ДЛЯ МЕЗОНИНА",
+		CFrame.new(-126, F + 8, 117.5),
+		Vector3.new(30, 2.5, 0.3),
+		PUTAWAY_COLOR,
+		model
+	)
+end
+
 function Logistics.build(parent: Instance)
 	local model = Instance.new("Model")
 	model.Name = "Logistics"
@@ -123,6 +140,16 @@ function Logistics.build(parent: Instance)
 	buildRoad(model)
 	buildUtilization(model)
 	buildEmptyDrop(model)
+	buildPutawayZone(model)
+	-- Товар: в проходе между товарным буфером и буфером мусора К4
+	buildPickup(
+		model,
+		"GoodsPickup",
+		"goods",
+		Vector2.new(100, 96),
+		Vector2.new(160, 108),
+		"ПОГРУЗКА ТЯГАЧЕЙ · ТОВАР НА МЕЗОНИН"
+	)
 	-- Картон: между буфером мусора К4 и дорогой. Зона с запасом достаёт до дороги,
 	-- поэтому цеплять тары можно, не съезжая с неё
 	buildPickup(

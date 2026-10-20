@@ -1,9 +1,9 @@
 --!strict
 -- Тары, которые нужно вывезти:
+--   тары с товаром едут с товарного буфера К4 в зону раскладки у мезонина ("goods");
 --   тары с картоном едут на утилизацию в К2 ("cardboard");
 --   пустые тары едут в буфер пустых тар К4 ("empty").
--- Тары, сданные игроками в буфер мусора и зону пустых тар мезонина, через Config.Tugger.WaitBeforeNpc
--- увозит NPC-тягач. Карщики-игроки возят свои тары, выданные на погрузке. Если карщик
+-- Тары, сданные игроками в буферы, через Config.Tugger.WaitBeforeNpc увозит NPC-тягач. Карщики-игроки возят свои тары, выданные на погрузке. Если карщик
 -- не довёз их за Config.Tugger.DeliverBeforeNpc, тары отцепляются и их довозит NPC.
 
 local CollectionService = game:GetService("CollectionService")
@@ -34,6 +34,7 @@ local Hauling = {}
 
 local waiting: { [State.Cart]: Waiting } = {}
 local timeoutListeners: { (Player, { State.Cart }) -> () } = {}
+local deliveryHandlers: { [string]: (State.Cart) -> () } = {}
 local npcBusy: { [string]: boolean } = {}
 
 function Hauling.add(cart: State.Cart, kind: string)
@@ -65,6 +66,22 @@ function Hauling.release(cart: State.Cart, immediately: boolean)
 	if entry then
 		entry.claimedBy = nil
 		entry.since = if immediately then -math.huge else os.clock()
+	end
+end
+
+-- Что делать с довезённой тарой этого вида (по умолчанию она исчезает)
+function Hauling.onDelivered(kind: string, handler: (State.Cart) -> ())
+	deliveryHandlers[kind] = handler
+end
+
+-- Тару довезли до места: товарная встаёт в зону раскладки, остальные исчезают
+function Hauling.deliver(cart: State.Cart, kind: string)
+	waiting[cart] = nil
+	local handler = deliveryHandlers[kind]
+	if handler then
+		handler(cart)
+	else
+		cart.model:Destroy()
 	end
 end
 
@@ -171,8 +188,7 @@ local function runNpcJob(kind: string, entries: { Waiting })
 		route(model, groundOf(drop))
 	end
 	for _, entry in hitched do
-		waiting[entry.cart] = nil
-		entry.cart.model:Destroy()
+		Hauling.deliver(entry.cart, kind)
 	end
 
 	route(model, depotPoint())
@@ -216,7 +232,7 @@ local function check()
 	end
 
 	-- Тары, которые слишком долго ждут карщика
-	for _, kind in { "cardboard", "empty" } do
+	for _, kind in { "goods", "cardboard", "empty" } do
 		if npcBusy[kind] then
 			continue
 		end

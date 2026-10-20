@@ -1,8 +1,11 @@
 --!strict
 -- Карщики: тягач с «паровозом» из тар. Права на тягач — с рейтинга Config.Tugger.RatingRequired.
--- Тягач берут на стоянке в центральном проходе. Тары цепляют на погрузке тягачей (TrainPickup):
--- картон — у буфера мусора К4, пустые — у зоны пустых тар мезонина. Сдают картон на утилизацию в К2,
--- пустые — в буфер пустых тар К4. Ведёт тягач сам игрок (клиентский скрипт TuggerDrive).
+-- Тягач берут на стоянке в центральном проходе. Диспетчер выдаёт заявку (Config.Tugger.Routes):
+--   товар — с погрузки у товарного буфера К4 в зону раскладки у мезонина;
+--   картон — с погрузки у буфера мусора К4 на утилизацию в К2;
+--   пустые тары — с погрузки у мезонина в приём пустых тар К4.
+-- За заявку целиком — бонус, срочная заявка в срок — бонус больше.
+-- Ведёт тягач сам игрок (клиентский скрипт TuggerDrive).
 -- Каждому карщику тары выдаются отдельно, поэтому его работа не зависит от других игроков.
 -- Все действия за рулём — одной подсказкой E на самом тягаче: в зоне погрузки она цепляет тару,
 -- в зоне сдачи сдаёт паровоз, на стоянке сдаёт тягач.
@@ -12,6 +15,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CartModel = require(script.Parent.CartModel)
+local Carts = require(script.Parent.Carts)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Hauling = require(script.Parent.Hauling)
 local PlayerData = require(script.Parent.PlayerData)
@@ -24,6 +28,7 @@ local notify = require(script.Parent.Notify)
 local DEPOT_DISTANCE = 14
 local ZONE_MARGIN = 6 -- насколько можно выехать за край зоны погрузки или сдачи
 local PROMPT_REFRESH = 0.2
+local TIMER_REFRESH = 1 -- как часто обновлять отсчёт срочной заявки
 local IDLE_DESPAWN = 60 -- через сколько секунд пустой тягач без водителя возвращается на стоянку
 local TRAIN_WELD = "TrainWeld"
 
@@ -47,8 +52,46 @@ local function inZone(zone: BasePart, position: Vector3): boolean
 	return math.abs(offset.X) <= zone.Size.X / 2 + ZONE_MARGIN and math.abs(offset.Z) <= zone.Size.Z / 2 + ZONE_MARGIN
 end
 
-local function kindName(kind: string?): string
-	return if kind == "cardboard" then "тары с картоном" else "пустые тары"
+local function routeOf(kind: string?): { Name: string, PayPerCart: number }?
+	return if kind then (Config.Tugger.Routes :: any)[kind] else nil
+end
+
+-- Новая заявка диспетчера: вид заявки выпадает по весам из Config.Tugger.Routes
+local function issueOrder(tugger: State.Tugger)
+	local settings = Config.Tugger
+	local total = 0
+	for _, route in settings.Routes do
+		total += route.Weight
+	end
+	local roll = math.random() * total
+	local kind = "goods"
+	for routeKind, route in settings.Routes do
+		roll -= route.Weight
+		if roll <= 0 then
+			kind = routeKind
+			break
+		end
+	end
+
+	local urgent = math.random() < settings.UrgentChance
+	local count = math.random(settings.OrderCarts.Min, math.min(settings.OrderCarts.Max, settings.MaxCarts))
+	tugger.order = {
+		kind = kind,
+		count = count,
+		urgent = urgent,
+		deadline = os.clock() + settings.UrgentTime,
+	}
+	local route = routeOf(kind)
+	local name = if route then route.Name else kind
+	if urgent then
+		notify(
+			tugger.owner,
+			`Срочная заявка: {name}, {count} тар. Успей за {settings.UrgentTime} сек — бонус ×{settings.UrgentMultiplier}`,
+			"success"
+		)
+	else
+		notify(tugger.owner, `Новая заявка: {name}, {count} тар`, "info")
+	end
 end
 
 -- Отцепить тару и оставить её стоять там, где она сейчас. Вывоз её подхватит NPC.
@@ -169,6 +212,7 @@ local function spawnTugger(player: Player, depot: BasePart)
 	}
 	tuggers[player] = tugger
 	session.tugger = tugger
+	issueOrder(tugger)
 	seat:GetPropertyChangedSignal("Occupant"):Connect(function()
 		onOccupantChanged(tugger)
 	end)
@@ -212,25 +256,18 @@ local function onPickup(player: Player, zone: BasePart)
 		return
 	end
 	local kind = zone:GetAttribute("Kind")
-	if kind ~= "cardboard" and kind ~= "empty" then
+	local order = tugger.order
+	if typeof(kind) ~= "string" or not order or order.kind ~= kind then
+		notify(player, "Эта погрузка не для твоей заявки", "error")
 		return
 	end
-	if #tugger.carts >= Config.Tugger.MaxCarts then
-		notify(player, `В паровозе уже {Config.Tugger.MaxCarts} тар: отвези их`, "error")
-		return
-	end
-	if tugger.kind and tugger.kind ~= kind then
-		notify(
-			player,
-			`В паровозе только один вид тар: сейчас ты везёшь {kindName(
-				tugger.kind
-			)}`,
-			"error"
-		)
+	if #tugger.carts >= order.count then
+		notify(player, `По заявке нужно {order.count} тар: вези паровоз`, "error")
 		return
 	end
 
-	local cart = CartModel.create()
+	-- Тару с товаром потом возьмут раскладчики, поэтому её создаёт Carts (с подсказкой «Взять на раскладку»)
+	local cart = if kind == "goods" then Carts.generateGoodsCart() else CartModel.create()
 	cart.prompt.Enabled = false
 	if kind == "cardboard" then
 		cart.kind = "cardboard"
@@ -260,58 +297,100 @@ local function onPickup(player: Player, zone: BasePart)
 
 	table.insert(tugger.carts, cart)
 	tugger.kind = kind
-	notify(player, `Прицеплено: {#tugger.carts}/{Config.Tugger.MaxCarts}`, "success")
+	notify(player, `Прицеплено: {#tugger.carts}/{order.count}`, "success")
 	Tasks.refresh(player)
 end
 
--- Сдать паровоз: картон — на утилизации, пустые тары — в буфере пустых тар К4
+-- Сколько заплатят за паровоз сейчас: за каждую тару, плюс бонус за заявку целиком
+local function payFor(tugger: State.Tugger): (number, string)
+	local settings = Config.Tugger
+	local route = routeOf(tugger.kind)
+	local count = #tugger.carts
+	local pay = count * (if route then route.PayPerCart else 0)
+	local order = tugger.order
+	if not order or count < order.count then
+		return pay, ""
+	end
+	if order.urgent and os.clock() <= order.deadline then
+		return pay + settings.OrderBonus * settings.UrgentMultiplier,
+			` (срочная в срок: бонус ×{settings.UrgentMultiplier})`
+	end
+	return pay + settings.OrderBonus, " (с бонусом за заявку)"
+end
+
+-- Сдать паровоз: товар встаёт в зону раскладки, картон уходит в пресс, пустые тары — в буфер К4
 local function onTrainDrop(player: Player, drop: BasePart)
 	local tugger = tuggers[player]
 	if not tugger or #tugger.carts == 0 then
 		notify(player, "Сюда карщики привозят паровоз из тар", "info")
 		return
 	end
-	if drop:GetAttribute("Kind") ~= tugger.kind then
-		notify(player, `Сюда не возят {kindName(tugger.kind)}`, "error")
+	local kind = tugger.kind
+	if not kind or drop:GetAttribute("Kind") ~= kind then
+		notify(player, "Это место сдачи не для твоего паровоза", "error")
 		return
 	end
 
 	local count = #tugger.carts
+	local pay, bonusText = payFor(tugger)
+	local order = tugger.order
+	local full = order ~= nil and count >= order.count
 	for _, cart in tugger.carts do
-		Hauling.remove(cart)
-		cart.model:Destroy()
+		local weld = cart.body:FindFirstChild(TRAIN_WELD)
+		if weld then
+			weld:Destroy()
+		end
+		cart.body.Anchored = true
+		cart.body.Massless = false
+		Hauling.deliver(cart, kind)
 	end
 	table.clear(tugger.carts)
 	tugger.kind = nil
 
-	PlayerData.addKopecks(player, count * Config.Tugger.PayPerCart * 100)
+	PlayerData.addKopecks(player, pay * 100)
 	Rating.addPoints(player, count * Config.Tugger.PointsPerCart)
-	notify(player, `Паровоз сдан: {count} тар, +{count * Config.Tugger.PayPerCart} ₽`, "success")
+	if full then
+		notify(player, `Заявка выполнена: {count} тар, +{pay} ₽{bonusText}`, "success")
+	else
+		notify(
+			player,
+			`Сдано {count} тар из {if order then order.count else count}: +{pay} ₽, без бонуса за заявку`,
+			"info"
+		)
+	end
+	issueOrder(tugger)
 	Tasks.refresh(player)
 end
 
--- Карщик не довёз тары вовремя: отцепляем их, дальше их везёт NPC
+-- Карщик не довёз тары вовремя: заявка сорвана, весь паровоз отцепляется, дальше его везёт NPC
 local function onTimeout(player: Player, carts: { State.Cart })
 	local tugger = tuggers[player]
 	if not tugger then
 		return
 	end
-	local dropped = 0
+	local late = false
 	for _, cart in carts do
-		local index = table.find(tugger.carts, cart)
-		if index then
-			table.remove(tugger.carts, index)
-			dropCart(cart)
-			dropped += 1
+		if table.find(tugger.carts, cart) then
+			late = true
 		end
 	end
-	if #tugger.carts == 0 then
-		tugger.kind = nil
+	if not late then
+		return
 	end
-	if dropped > 0 then
-		notify(player, `Ты не довёз {dropped} тар вовремя: их довезёт NPC`, "error")
-		Tasks.refresh(player)
+
+	local count = #tugger.carts
+	for _, cart in tugger.carts do
+		dropCart(cart)
 	end
+	table.clear(tugger.carts)
+	tugger.kind = nil
+	notify(
+		player,
+		`Ты не довёз {count} тар вовремя: их довезёт NPC, заявка снята`,
+		"error"
+	)
+	issueOrder(tugger)
+	Tasks.refresh(player)
 end
 
 local function addZonePrompt(
@@ -346,10 +425,10 @@ local function currentAction(tugger: State.Tugger): (string?, BasePart?)
 			end
 		end
 	end
-	if count < Config.Tugger.MaxCarts then
+	local order = tugger.order
+	if order and count < order.count then
 		for _, pickup in tagged("TrainPickup") do
-			local kind = pickup:GetAttribute("Kind")
-			if (tugger.kind == nil or tugger.kind == kind) and inZone(pickup, position) then
+			if pickup:GetAttribute("Kind") == order.kind and inZone(pickup, position) then
 				return "pickup", pickup
 			end
 		end
@@ -365,22 +444,20 @@ local function currentAction(tugger: State.Tugger): (string?, BasePart?)
 end
 
 local function refreshPrompt(tugger: State.Tugger)
-	local action, zone = currentAction(tugger)
+	local action = currentAction(tugger)
 	local prompt = tugger.prompt
 	local count = #tugger.carts
-	local max = Config.Tugger.MaxCarts
+	local order = tugger.order
 	if action == "sit" then
 		prompt.ActionText = "Сесть в тягач"
 		prompt.ObjectText = "Тягач"
-	elseif action == "pickup" and zone then
-		local what = if zone:GetAttribute("Kind") == "cardboard"
-			then "Тары с картоном"
-			else "Пустые тары"
+	elseif action == "pickup" and order then
+		local route = routeOf(order.kind)
 		prompt.ActionText = "Прицепить тару"
-		prompt.ObjectText = `{what} · в паровозе {count}/{max}`
+		prompt.ObjectText = `{if route then route.Name else ""} · {count}/{order.count}`
 	elseif action == "drop" then
 		prompt.ActionText = "Сдать паровоз"
-		prompt.ObjectText = `{count} тар · +{count * Config.Tugger.PayPerCart} ₽`
+		prompt.ObjectText = `{count} тар · +{payFor(tugger)} ₽`
 	elseif action == "return" then
 		prompt.ActionText = "Сдать тягач"
 		prompt.ObjectText = "Стоянка тягачей"
@@ -435,12 +512,22 @@ function Tugger.start()
 			)
 		end
 	end
-	-- Погрузка и сдача паровоза — подсказкой на самом тягаче, она обновляется по ходу езды
+	-- Погрузка и сдача паровоза — подсказкой на самом тягаче, она обновляется по ходу езды.
+	-- Раз в секунду обновляем и задание: у срочной заявки идёт отсчёт.
 	task.spawn(function()
+		local sinceTimer = 0
 		while true do
-			task.wait(PROMPT_REFRESH)
+			sinceTimer += task.wait(PROMPT_REFRESH)
+			local timerTick = sinceTimer >= TIMER_REFRESH
+			if timerTick then
+				sinceTimer = 0
+			end
 			for _, tugger in tuggers do
 				refreshPrompt(tugger)
+				local order = tugger.order
+				if timerTick and order and order.urgent then
+					Tasks.refresh(tugger.owner)
+				end
 			end
 		end
 	end)
@@ -458,8 +545,6 @@ function Tugger.start()
 		while true do
 			task.wait(10)
 			for _, tugger in tuggers do
-				-- Заодно обновляем подсказку: сколько тар ждут вывоза
-				Tasks.refresh(tugger.owner)
 				local idleSince = tugger.idleSince
 				if idleSince and os.clock() - idleSince > IDLE_DESPAWN then
 					local owner = tugger.owner
