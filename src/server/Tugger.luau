@@ -1,15 +1,16 @@
 --!strict
 -- Карщики: тягач с «паровозом» из тар. Права на тягач — с рейтинга Config.Tugger.RatingRequired.
--- Тягач берут на стоянке в центральном проходе. Тары цепляют там, где они ждут вывоза
--- (буфер мусора К4 и зона пустых тар мезонина), и сдают: картон — на утилизацию в К2,
+-- Тягач берут на стоянке в центральном проходе. Тары цепляют на погрузке тягачей (TrainPickup):
+-- картон — у буфера мусора К4, пустые — у зоны пустых тар мезонина. Сдают картон на утилизацию в К2,
 -- пустые — в буфер пустых тар К4. Ведёт тягач сам игрок (клиентский скрипт TuggerDrive).
+-- Каждому карщику тары выдаются отдельно, поэтому его работа не зависит от других игроков.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local CartModel = require(script.Parent.CartModel)
 local Config = require(ReplicatedStorage.Shared.Config)
-local Grids = require(script.Parent.Grids)
 local Hauling = require(script.Parent.Hauling)
 local PlayerData = require(script.Parent.PlayerData)
 local Rating = require(script.Parent.Rating)
@@ -19,7 +20,6 @@ local TuggerModel = require(script.Parent.TuggerModel)
 local notify = require(script.Parent.Notify)
 
 local DEPOT_DISTANCE = 14
-local HITCH_DISTANCE = 18 -- от тягача до тары, которую цепляют
 local IDLE_DESPAWN = 60 -- через сколько секунд пустой тягач без водителя возвращается на стоянку
 local TRAIN_WELD = "TrainWeld"
 
@@ -99,6 +99,14 @@ local function spawnTugger(player: Player, depot: BasePart)
 		return
 	end
 	local session = State.session(player)
+	if session.operation ~= "tugger" then
+		notify(
+			player,
+			"Тягач выдают на операции «Карщик». Выбрать операцию — клавиша M",
+			"error"
+		)
+		return
+	end
 	if not session.uniform then
 		notify(player, "Сначала переоденься в форму", "error")
 		return
@@ -180,27 +188,26 @@ local function onDepot(player: Player, depot: BasePart)
 	Tasks.refresh(player)
 end
 
--- Прицепить тару, которая ждёт вывоза, в хвост паровоза
-function Tugger.hitch(player: Player, cart: State.Cart)
+-- Погрузка тягачей: каждый раз карщику выдают новую тару, чужие тары он не трогает
+local function onPickup(player: Player, zone: BasePart)
 	local tugger = tuggers[player]
 	if not tugger or tugger.seat.Occupant == nil then
-		notify(player, "Цепляют тары карщики на тягаче", "error")
+		notify(player, "Здесь грузят паровозы карщиков: нужен тягач", "error")
 		return
 	end
-	local entry = Hauling.get(cart)
-	if not entry or entry.claimedBy or entry.npc then
-		notify(player, "Эту тару уже везут", "error")
+	if (tugger.chassis.Position - zone.Position).Magnitude > zoneReach(zone) then
+		notify(player, "Подъедь к погрузке поближе", "error")
 		return
 	end
-	if (tugger.chassis.Position - cart.body.Position).Magnitude > HITCH_DISTANCE then
-		notify(player, "Подъедь к таре поближе", "error")
+	local kind = zone:GetAttribute("Kind")
+	if kind ~= "cardboard" and kind ~= "empty" then
 		return
 	end
 	if #tugger.carts >= Config.Tugger.MaxCarts then
 		notify(player, `В паровозе уже {Config.Tugger.MaxCarts} тар: отвези их`, "error")
 		return
 	end
-	if tugger.kind and tugger.kind ~= entry.kind then
+	if tugger.kind and tugger.kind ~= kind then
 		notify(
 			player,
 			`В паровозе только один вид тар: сейчас ты везёшь {kindName(
@@ -211,9 +218,20 @@ function Tugger.hitch(player: Player, cart: State.Cart)
 		return
 	end
 
-	Grids.remove(cart)
-	Hauling.claim(cart, player)
+	local cart = CartModel.create()
 	cart.prompt.Enabled = false
+	if kind == "cardboard" then
+		cart.kind = "cardboard"
+		for _ = 1, Config.CardboardPerCart do
+			CartModel.addSheet(cart)
+		end
+		cart.count = Config.CardboardPerCart
+	end
+	CartModel.refreshLabels(cart)
+	-- Тара на учёте: если карщик её не довезёт, её довезёт NPC
+	Hauling.add(cart, kind)
+	Hauling.claim(cart, player)
+
 	cart.model:PivotTo(tugger.model:GetPivot() * Hauling.trainOffset(#tugger.carts + 1))
 	cart.body.Massless = true
 	cart.body.Anchored = false
@@ -229,7 +247,7 @@ function Tugger.hitch(player: Player, cart: State.Cart)
 	end
 
 	table.insert(tugger.carts, cart)
-	tugger.kind = entry.kind
+	tugger.kind = kind
 	notify(player, `Прицеплено: {#tugger.carts}/{Config.Tugger.MaxCarts}`, "success")
 	Tasks.refresh(player)
 end
@@ -306,6 +324,19 @@ local function addZonePrompt(
 	end)
 end
 
+-- Игрок сменил операцию: пустой тягач уезжает на стоянку. false — если за ним ещё паровоз.
+function Tugger.dismiss(player: Player): boolean
+	local tugger = tuggers[player]
+	if not tugger then
+		return true
+	end
+	if #tugger.carts > 0 then
+		return false
+	end
+	despawn(tugger)
+	return true
+end
+
 function Tugger.start()
 	for _, depot in CollectionService:GetTagged("TuggerDepot") do
 		if depot:IsA("BasePart") then
@@ -316,6 +347,14 @@ function Tugger.start()
 				DEPOT_DISTANCE,
 				onDepot
 			)
+		end
+	end
+	for _, pickup in CollectionService:GetTagged("TrainPickup") do
+		if pickup:IsA("BasePart") then
+			local object = if pickup:GetAttribute("Kind") == "cardboard"
+				then "Погрузка: тары с картоном"
+				else "Погрузка: пустые тары"
+			addZonePrompt(pickup, "Прицепить тару", object, zoneReach(pickup), onPickup)
 		end
 	end
 	for _, drop in CollectionService:GetTagged("TrainDrop") do

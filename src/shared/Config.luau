@@ -187,11 +187,11 @@ local categories: { Category } = {
 	},
 }
 
--- Сколько штук товара лежит в коробке и сколько влезает в ячейку мезонина, в зависимости от габаритов
-local itemSizes: { [string]: { Min: number, Max: number, CellCapacity: number } } = {
-	S = { Min = 30, Max = 50, CellCapacity = 100 },
-	M = { Min = 15, Max = 25, CellCapacity = 40 },
-	L = { Min = 6, Max = 10, CellCapacity = 15 },
+-- Сколько штук товара лежит в коробке, в зависимости от габаритов
+local itemSizes: { [string]: { Min: number, Max: number } } = {
+	S = { Min = 30, Max = 50 },
+	M = { Min = 15, Max = 25 },
+	L = { Min = 6, Max = 10 },
 }
 
 local Config = {
@@ -262,13 +262,11 @@ local Config = {
 			{ "General", "Electronics" },
 			{ "Kids", "Pets" },
 		},
-		InitialFill = 0.5, -- какая доля ячеек при запуске сервера уже с товаром
 		PutawayPay = 0.4, -- раскладка: доля цены пика за каждую разложенную штуку
 		PickPay = 1, -- сборка: доля цены пика за каждую собранную штуку
 		OrderBonus = 20, -- рублей за сданный заказ
 		OrderLines = { Min = 3, Max = 6 }, -- сколько разных товаров в заказе
 		LineQuantity = { Min = 1, Max = 3 }, -- сколько штук каждого товара
-		BufferRefill = 60, -- раз во сколько секунд соседняя смена пополняет товарный буфер, если он почти пуст
 		Points = { PutawayBatch = 5, PickLine = 3, OrderShipped = 15 },
 	},
 
@@ -278,7 +276,7 @@ local Config = {
 		MaxCarts = 6, -- сколько тар можно прицепить
 		PayPerCart = 15, -- рублей за каждую довезённую тару
 		PointsPerCart = 5,
-		WaitBeforeNpc = 180, -- тара ждёт карщика дольше — её увозит NPC
+		WaitBeforeNpc = 180, -- тары, сданные в буфер мусора и зону пустых тар мезонина, NPC увозит через это время
 		DeliverBeforeNpc = 300, -- карщик подцепил тары и не довёз за это время — довозит NPC
 		Speed = 26, -- скорость тягача, studs в секунду
 		NpcSpeed = 18,

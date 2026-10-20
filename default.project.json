@@ -16,6 +16,9 @@
         },
         "Effect": {
           "$className": "RemoteEvent"
+        },
+        "ChooseOperation": {
+          "$className": "RemoteEvent"
         }
       }
     },

@@ -71,6 +71,14 @@ local function assignTable(player: Player)
 		notify(player, "Сначала переоденься в форму", "error")
 		return
 	end
+	if session.operation ~= "receiving" then
+		notify(
+			player,
+			"Столы выдают на операции «Приёмка». Выбрать операцию — клавиша M",
+			"error"
+		)
+		return
+	end
 
 	local current = session.workTable
 	if current then
@@ -177,30 +185,35 @@ local function setupTable(model: Model)
 	end)
 end
 
--- Игрок ушёл: стол освобождается, всё с него убирается
+-- Стол освобождается, всё с него убирается (игрок ушёл или сменил операцию)
+function Tables.releaseTable(player: Player)
+	local session = State.sessions[player]
+	local workTable = if session then session.workTable else nil
+	if not session or not workTable then
+		return
+	end
+	session.workTable = nil
+	workTable.owner = nil
+	workTable.occupied = false
+	workTable.delivery += 1
+	workTable.palletOnTheWay = false
+
+	local pallet = workTable.pallet
+	if pallet then
+		pallet.model:Destroy()
+		workTable.pallet = nil
+	end
+	Boxes.cleanupTable(workTable)
+	Carts.cleanupTable(workTable)
+	Tasks.updatePrompts(workTable)
+	Boards.refresh(workTable)
+end
+
+-- Игрок ушёл
 local function release(player: Player)
 	Carts.dropPushed(player, false)
 	Boxes.dropAll(player)
-
-	local session = State.sessions[player]
-	local workTable = if session then session.workTable else nil
-	if workTable then
-		workTable.owner = nil
-		workTable.occupied = false
-		workTable.delivery += 1
-		workTable.palletOnTheWay = false
-
-		local pallet = workTable.pallet
-		if pallet then
-			pallet.model:Destroy()
-			workTable.pallet = nil
-		end
-		Boxes.cleanupTable(workTable)
-		Carts.cleanupTable(workTable)
-		Tasks.updatePrompts(workTable)
-		Boards.refresh(workTable)
-	end
-
+	Tables.releaseTable(player)
 	State.sessions[player] = nil
 end
 

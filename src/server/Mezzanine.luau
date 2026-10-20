@@ -1,7 +1,7 @@
 --!strict
--- Ячейки мезонина: сколько какого товара где лежит. Раскладка кладёт товар в ячейки,
--- сборка забирает. Под заказ товар бронируется, а ячейка под раскладку закрепляется
--- за раскладчиком, чтобы два игрока не мешали друг другу.
+-- Ячейки мезонина. За каждой ячейкой навсегда закреплён один товар (как планограмма на складе),
+-- а запас в ячейке не кончается и не переполняется. Поэтому раскладка и сборка не зависят
+-- ни друг от друга, ни от других игроков: задания генерируются для каждого отдельно.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -16,6 +16,7 @@ local Mezzanine = {}
 
 local cells: { State.Cell } = {}
 local cellByPart: { [BasePart]: State.Cell } = {}
+local cellsByItem: { [Config.ItemType]: { State.Cell } } = {}
 local lastOrderNumber = 1000
 
 local function categoryById(id: unknown): Config.Category?
@@ -27,43 +28,30 @@ local function categoryById(id: unknown): Config.Category?
 	return nil
 end
 
-function Mezzanine.capacity(item: Config.ItemType): number
-	local size = Config.ItemSizes[item.Size]
-	return if size then size.CellCapacity else 20
-end
+-- Подпись и фигурка товара на полке
+local function decorate(cell: State.Cell)
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Front
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 50
+	gui.Parent = cell.part
 
--- Сколько штук этого товара ещё влезет в ячейку
-function Mezzanine.space(cell: State.Cell, item: Config.ItemType): number
-	local current = cell.item
-	if current and current ~= item then
-		return 0
-	end
-	return Mezzanine.capacity(item) - cell.qty
-end
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+	label.BorderSizePixel = 0
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBold
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.Text = `{cell.address}  {cell.item.Name}`
+	label.Parent = gui
 
-function Mezzanine.refreshCell(cell: State.Cell)
-	local item = cell.item
-	if item and cell.qty > 0 then
-		cell.label.Text = `{cell.address}  {item.Name} {cell.qty}/{Mezzanine.capacity(item)}`
-	else
-		cell.label.Text = `{cell.address}  пусто`
-	end
-
-	-- На полке стоит фигурка товара, если он там есть
-	local visual = cell.visual
-	if visual and (not item or cell.qty == 0 or visual.Name ~= item.Name) then
-		visual:Destroy()
-		cell.visual = nil
-	end
-	if item and cell.qty > 0 and not cell.visual then
-		local figure = Items.create(item, VISUAL_SIZE)
-		figure.Anchored = true
-		figure.CFrame = cell.part.CFrame
-			* CFrame.new(0, cell.part.Size.Y / 2 + figure.Size.Y / 2, 0)
-			* Items.uprightRotation(item)
-		figure.Parent = cell.part
-		cell.visual = figure
-	end
+	local figure = Items.create(cell.item, VISUAL_SIZE)
+	figure.Anchored = true
+	figure.CFrame = cell.part.CFrame
+		* CFrame.new(0, cell.part.Size.Y / 2 + figure.Size.Y / 2, 0)
+		* Items.uprightRotation(cell.item)
+	figure.Parent = cell.part
 end
 
 -- Клик пришёлся в ячейку или в фигурку товара на ней
@@ -78,72 +66,28 @@ function Mezzanine.cellOf(target: Instance): State.Cell?
 	return nil
 end
 
--- Куда разложить товар: сначала ячейка с тем же товаром и местом, потом пустая ячейка его категории
-function Mezzanine.findPutawayCell(item: Config.ItemType, player: Player): State.Cell?
-	local category = Items.categoryOf(item)
-	local empty: State.Cell? = nil
-	for _, cell in cells do
-		local claimed = cell.claimedBy ~= nil and cell.claimedBy ~= player
-		if cell.category == category and not claimed then
-			if cell.item == item and Mezzanine.space(cell, item) > 0 then
-				return cell
-			elseif not empty and cell.qty == 0 and cell.reserved == 0 then
-				empty = cell
-			end
-		end
+-- Куда разложить товар: случайная ячейка, закреплённая за этим товаром
+function Mezzanine.cellFor(item: Config.ItemType): State.Cell?
+	local list = cellsByItem[item]
+	if not list or #list == 0 then
+		return nil
 	end
-	return empty
+	return list[math.random(#list)]
 end
 
-function Mezzanine.claim(cell: State.Cell, player: Player)
-	cell.claimedBy = player
-end
-
-function Mezzanine.unclaim(cell: State.Cell, player: Player)
-	if cell.claimedBy == player then
-		cell.claimedBy = nil
-	end
-end
-
-function Mezzanine.put(cell: State.Cell, item: Config.ItemType, amount: number)
-	cell.item = item
-	cell.qty += amount
-	Mezzanine.refreshCell(cell)
-end
-
--- Забрать забронированный под заказ товар
-function Mezzanine.takeReserved(cell: State.Cell, amount: number)
-	cell.qty = math.max(0, cell.qty - amount)
-	cell.reserved = math.max(0, cell.reserved - amount)
-	if cell.qty == 0 then
-		cell.item = nil
-	end
-	Mezzanine.refreshCell(cell)
-end
-
-function Mezzanine.unreserve(cell: State.Cell, amount: number)
-	cell.reserved = math.max(0, cell.reserved - amount)
-end
-
--- Новый заказ из товара, который сейчас лежит на мезонине. Товар сразу бронируется.
+-- Новый заказ для сборщика: случайные ячейки со всех этажей
 function Mezzanine.createOrder(): (number, { State.OrderLine })
 	local settings = Config.Mezzanine
-	local available: { State.Cell } = {}
-	for _, cell in cells do
-		if cell.item and cell.qty - cell.reserved > 0 then
-			table.insert(available, cell)
-		end
-	end
-
 	local lines: { State.OrderLine } = {}
-	local wanted = math.random(settings.OrderLines.Min, settings.OrderLines.Max)
-	while #lines < wanted and #available > 0 do
-		local cell = table.remove(available, math.random(#available)) :: State.Cell
-		local item = cell.item :: Config.ItemType
-		local qty =
-			math.min(cell.qty - cell.reserved, math.random(settings.LineQuantity.Min, settings.LineQuantity.Max))
-		cell.reserved += qty
-		table.insert(lines, { item = item, qty = qty, cell = cell, picked = false })
+	local used: { [State.Cell]: boolean } = {}
+	local wanted = math.min(#cells, math.random(settings.OrderLines.Min, settings.OrderLines.Max))
+	while #lines < wanted do
+		local cell = cells[math.random(#cells)]
+		if not used[cell] then
+			used[cell] = true
+			local qty = math.random(settings.LineQuantity.Min, settings.LineQuantity.Max)
+			table.insert(lines, { item = cell.item, qty = qty, cell = cell, picked = false })
+		end
 	end
 
 	lastOrderNumber += 1
@@ -151,6 +95,8 @@ function Mezzanine.createOrder(): (number, { State.OrderLine })
 end
 
 function Mezzanine.start()
+	-- Товары категории закрепляются за её ячейками по кругу, чтобы каждый товар где-то лежал
+	local nextIndex: { [Config.Category]: number } = {}
 	for _, part in CollectionService:GetTagged("Cell") do
 		local category = categoryById(part:GetAttribute("Category"))
 		local address = part:GetAttribute("Address")
@@ -159,45 +105,22 @@ function Mezzanine.start()
 			continue
 		end
 
-		local gui = Instance.new("SurfaceGui")
-		gui.Face = Enum.NormalId.Front
-		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-		gui.PixelsPerStud = 50
-		gui.Parent = part
-
-		local label = Instance.new("TextLabel")
-		label.Size = UDim2.fromScale(1, 1)
-		label.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-		label.BorderSizePixel = 0
-		label.TextScaled = true
-		label.Font = Enum.Font.GothamBold
-		label.TextColor3 = Color3.new(1, 1, 1)
-		label.Parent = gui
-
+		local index = (nextIndex[category] or 0) % #category.Items + 1
+		nextIndex[category] = index
 		local cell: State.Cell = {
 			part = part,
 			address = address,
 			floor = floor,
 			category = category,
-			item = nil,
-			qty = 0,
-			reserved = 0,
-			claimedBy = nil,
-			label = label,
-			visual = nil,
+			item = category.Items[index],
 		}
-
-		-- Часть ячеек при запуске уже с товаром, чтобы сборщикам было что собирать
-		if math.random() < Config.Mezzanine.InitialFill then
-			local item = category.Items[math.random(#category.Items)]
-			local capacity = Mezzanine.capacity(item)
-			cell.item = item
-			cell.qty = math.random(math.ceil(capacity / 3), capacity)
-		end
+		decorate(cell)
 
 		table.insert(cells, cell)
 		cellByPart[part] = cell
-		Mezzanine.refreshCell(cell)
+		local list = cellsByItem[cell.item] or {}
+		cellsByItem[cell.item] = list
+		table.insert(list, cell)
 	end
 end
 

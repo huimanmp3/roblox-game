@@ -23,6 +23,7 @@ local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "Notifications"
 screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 10 -- поверх меню операций
 screenGui.Parent = playerGui
 
 local container = Instance.new("Frame")

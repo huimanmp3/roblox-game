@@ -1,7 +1,9 @@
 --!strict
 -- Логистика карщиков: стоянка тягачей в центральном проходе, дорога вдоль северной стены
--- (через ворота для техники в К2), утилизация мусора в углу К2 и приём пустых тар у буфера К4.
--- Места сдачи паровоза помечены тегом TrainDrop и атрибутом Kind ("cardboard" или "empty").
+-- (через ворота для техники в К2), погрузка тягачей у буфера мусора К4 и у зоны пустых тар мезонина,
+-- утилизация мусора в углу К2 и приём пустых тар у буфера К4.
+-- Погрузки помечены тегом TrainPickup, места сдачи паровоза — тегом TrainDrop.
+-- У обоих атрибут Kind: "cardboard" (тары с картоном) или "empty" (пустые тары).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -16,6 +18,7 @@ local ROAD_COLOR = Color3.fromRGB(241, 196, 15)
 local DEPOT_COLOR = Color3.fromRGB(230, 126, 34)
 local WASTE_COLOR = Color3.fromRGB(150, 110, 70)
 local EMPTY_COLOR = Color3.fromRGB(150, 155, 160)
+local PICKUP_COLOR = Color3.fromRGB(52, 152, 219)
 local DARK_COLOR = Color3.fromRGB(50, 50, 60)
 local CARDBOARD_COLOR = Color3.fromRGB(196, 154, 108)
 
@@ -102,6 +105,15 @@ local function buildEmptyDrop(model: Model)
 	)
 end
 
+-- Погрузка тягачей: здесь карщику выдают тары в паровоз
+local function buildPickup(model: Model, name: string, kind: string, from: Vector2, to: Vector2, title: string)
+	local pickup = zone(model, name, from, to, PICKUP_COLOR)
+	pickup:SetAttribute("Kind", kind)
+	Parts.tag(pickup, "TrainPickup")
+	local center = (from + to) / 2
+	Parts.sign(title, CFrame.new(center.X, F + 7, to.Y + 0.5), Vector3.new(22, 2.2, 0.3), PICKUP_COLOR, model)
+end
+
 function Logistics.build(parent: Instance)
 	local model = Instance.new("Model")
 	model.Name = "Logistics"
@@ -111,6 +123,24 @@ function Logistics.build(parent: Instance)
 	buildRoad(model)
 	buildUtilization(model)
 	buildEmptyDrop(model)
+	-- Картон: между буфером мусора К4 и дорогой
+	buildPickup(
+		model,
+		"CardboardPickup",
+		"cardboard",
+		Vector2.new(110, 174),
+		Vector2.new(150, 184),
+		"ПОГРУЗКА ТЯГАЧЕЙ · КАРТОН"
+	)
+	-- Пустые тары: между зоной пустых тар мезонина и дорогой
+	buildPickup(
+		model,
+		"EmptyCartsPickup",
+		"empty",
+		Vector2.new(-100, 166),
+		Vector2.new(-60, 176),
+		"ПОГРУЗКА ТЯГАЧЕЙ · ПУСТЫЕ ТАРЫ"
+	)
 end
 
 return Logistics

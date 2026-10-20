@@ -10,7 +10,6 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Hauling = require(script.Parent.Hauling)
 local Pallets = require(script.Parent.Pallets)
 local Pricing = require(script.Parent.Pricing)
-local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
 
 local Tasks = {}
@@ -97,21 +96,14 @@ local function describeHands(session: State.Session, workTable: State.WorkTable)
 	return nil, nil, ""
 end
 
--- Почему некуда деть картон и что с этим сделать
+-- Некуда деть картон: общей тары у ряда нет, а своей картонной у стола тоже нет
 local function describeNoCardboardTarget(workTable: State.WorkTable): (string, BasePart?, string)
-	local spot = workTable.cardboardSpot
-	local shared = if spot then State.sharedCarts[spot] else nil
-	if shared then
-		return "Общая тара для картона полная: откати её в буфер мусора (E у тары)",
-			shared.body,
-			"Тара для картона"
-	end
 	local text =
-		"Нет тары для картона: привези пустую из буфера пустых тар в начало ряда или к столу"
+		"Нет тары для картона: привези пустую тару из буфера пустых тар и поставь у стола"
 	return text, nearestTagged("CartParking", workTable.desk.Position), "Пустые тары"
 end
 
--- Карщик на тягаче: что цеплять и куда везти
+-- Карщик на тягаче: где цеплять тары и куда везти паровоз
 local function describeTugger(tugger: State.Tugger): (string, BasePart?, string)
 	if tugger.seat.Occupant == nil then
 		return "Сядь в тягач (E у тягача) или сдай его на стоянке тягачей",
@@ -123,28 +115,20 @@ local function describeTugger(tugger: State.Tugger): (string, BasePart?, string)
 	local max = Config.Tugger.MaxCarts
 	if count > 0 then
 		local drop = Hauling.dropPoint(tugger.kind or "")
+		local more = if count < max then ` Можно прицепить ещё {max - count}.` else ""
 		if tugger.kind == "cardboard" then
 			local text =
-				`Паровоз с картоном ({count}/{max}): вези на утилизацию в К2 через ворота для техники и сдай (E)`
+				`Паровоз с картоном ({count}/{max}): вези на утилизацию в К2 через ворота для техники и сдай (E).{more}`
 			return text, drop, "Утилизация"
 		end
 		local text =
-			`Паровоз пустых тар ({count}/{max}): вези в приём пустых тар у буфера К4 и сдай (E)`
+			`Паровоз пустых тар ({count}/{max}): вези в приём пустых тар у буфера К4 и сдай (E).{more}`
 		return text, drop, "Приём пустых тар"
 	end
 
-	local cardboard, empty = Hauling.counts()
-	if cardboard == 0 and empty == 0 then
-		return "Сейчас вывозить нечего. Подожди или сдай тягач на стоянке",
-			nil,
-			""
-	end
 	local text =
-		`Ждут вывоза: картон — {cardboard} (буфер мусора К4), пустые тары — {empty} (зона мезонина). Подъезжай и цепляй (E у тары)`
-	if cardboard >= empty then
-		return text, firstTagged("WasteBuffer"), "Буфер мусора"
-	end
-	return text, firstTagged("K2EmptyCarts"), "Пустые тары мезонина"
+		"Подъезжай к синей погрузке и цепляй тары (E): картон — у буфера мусора К4, пустые тары — у зоны пустых тар мезонина"
+	return text, nearestTagged("TrainPickup", tugger.chassis.Position), "Погрузка тягачей"
 end
 
 -- Задание на мезонине: раскладка или сборка
@@ -159,9 +143,7 @@ local function describeJob(job: State.Job): (string, BasePart?, string)
 			return text, target.part, `Ячейка {target.address}`
 		end
 		if job.cart.count > 0 then
-			return "Свободных ячеек для товара из тары нет. Подожди, пока сборщики освободят место",
-				nil,
-				""
+			return "Для товара в таре нет ячейки на мезонине", nil, ""
 		end
 		return "Тара пустая: верни её в зону пустых тар мезонина",
 			firstTagged("K2EmptyCarts"),
@@ -202,23 +184,41 @@ local function describe(player: Player, session: State.Session): (string, BasePa
 			"Выдача ТСД"
 	end
 
+	local operation = session.operation
+	if not operation then
+		return "Выбери операцию: нажми M или кнопку «Операция» слева",
+			nil,
+			""
+	end
+
 	local job = session.job
 	if job then
 		return describeJob(job)
 	end
-	local tugger = session.tugger
-	if tugger then
-		return describeTugger(tugger)
+	if operation == "putaway" then
+		local root = State.getRoot(player)
+		local buffer = if root then nearestTagged("BufferZone", root.Position) else firstTagged("BufferZone")
+		return "Возьми тару с товаром на товарном буфере К4 (E у тары)",
+			buffer,
+			"Товарный буфер"
+	elseif operation == "picking" then
+		return "Возьми тару на сборку в зоне пустых тар мезонина (E)",
+			firstTagged("K2EmptyCarts"),
+			"Пустые тары мезонина"
+	elseif operation == "tugger" then
+		local tugger = session.tugger
+		if tugger then
+			return describeTugger(tugger)
+		end
+		return "Возьми тягач на оранжевой стоянке в центральном проходе (E)",
+			firstTagged("TuggerDepot"),
+			"Стоянка тягачей"
 	end
 
+	-- Приёмка
 	local workTable = session.workTable
 	if not workTable then
-		if Rating.hasK2Access(player) then
-			local text =
-				"Получи стол у старших в К4 или иди на мезонин в К2: раскладка — тара с товарного буфера, сборка — зона пустых тар мезонина"
-			return text, firstTagged("SeniorDesk"), "Стол старших"
-		end
-		return "Получи стол у старших в блоке К4",
+		return "Получи стол у старших в блоке К4 (удерживай E)",
 			firstTagged("SeniorDesk"),
 			"Стол старших"
 	end

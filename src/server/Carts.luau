@@ -3,10 +3,12 @@
 --
 -- Приёмка (К4): пустые тары берут в буфере пустых тар. Назначение тары (товар или картон)
 -- задаёт первое, что в неё положили. Товарную везут на товарный буфер своей категории,
--- картонную — в буфер мусора. В начале каждого ряда стоит общая тара для картона,
--- можно поставить и свою у стола.
+-- картонную — в буфер мусора. В начале каждого ряда стоит общая тара для картона
+-- (заполнилась — её сразу меняют на пустую), можно поставить и свою у стола.
 -- Мезонин (К2): с товарного буфера тару берут на раскладку, в зоне пустых тар мезонина — на сборку,
 -- собранный заказ сдают в зоне отгрузки.
+-- Операции не зависят друг от друга: раскладчик получает свою новую тару, а не чужую,
+-- тары, сданные в буферы, просто ждут, пока их увезёт NPC.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,7 +26,6 @@ local Pricing = require(script.Parent.Pricing)
 local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
-local Tugger = require(script.Parent.Tugger)
 local notify = require(script.Parent.Notify)
 
 local effectEvent = ReplicatedStorage.Remotes.Effect
@@ -35,7 +36,7 @@ local INTERACT_DISTANCE = 10
 local GOODS_BUFFER_MAX = 6
 local WASTE_BUFFER_MAX = 12
 local K2_EMPTY_MAX = 16
-local GOODS_BUFFER_MIN = 2 -- если на зоне товарного буфера тар меньше, её пополняет соседняя смена
+local GOODS_BUFFER_MIN = 2 -- столько тар всегда стоит на каждой зоне товарного буфера
 
 local Carts = {}
 
@@ -64,6 +65,28 @@ local function zoneReach(zone: BasePart): number
 	return math.max(zone.Size.X, zone.Size.Z) / 2 + 6
 end
 
+local function firstTagged(tag: string): BasePart?
+	for _, instance in CollectionService:GetTagged(tag) do
+		if instance:IsA("BasePart") then
+			return instance
+		end
+	end
+	return nil
+end
+
+-- Работает ли игрок на этой операции (выбирается в меню)
+local function onOperation(player: Player, operation: string, name: string): boolean
+	if State.session(player).operation == operation then
+		return true
+	end
+	notify(
+		player,
+		`Это работа для операции «{name}». Выбрать операцию — клавиша M`,
+		"error"
+	)
+	return false
+end
+
 local function sharedSpotOf(cart: State.Cart): BasePart?
 	for spot, shared in State.sharedCarts do
 		if shared == cart then
@@ -81,26 +104,18 @@ end
 function Carts.refresh(cart: State.Cart)
 	CartModel.refreshLabels(cart)
 
-	-- У общей тары для картона подсказка меняется: бросить картон или откатить полную
 	if sharedSpotOf(cart) then
-		local full = cart.count >= State.capacity(cart)
-		cart.prompt.ActionText = if full
-			then "Откатить в буфер мусора"
-			else "Бросить картон"
+		cart.prompt.ActionText = "Бросить картон"
 		cart.prompt.ObjectText = "Общая тара для картона"
-		cart.prompt.Enabled = true
-	elseif Hauling.get(cart) then
-		-- Тара ждёт вывоза: её цепляют карщики
-		cart.prompt.ActionText = "Прицепить к тягачу"
-		cart.prompt.ObjectText = if cart.kind == "cardboard"
-			then "Тара с картоном"
-			else "Пустая тара"
 		cart.prompt.Enabled = true
 	elseif inGoodsBuffer(cart) then
 		local category = cart.category
 		cart.prompt.ActionText = "Взять на раскладку"
-		cart.prompt.ObjectText = `{if category then category.Name else "Товар"} · {cart.count} шт.`
+		cart.prompt.ObjectText = `Буфер «{if category then category.Name else "Товар"}»`
 		cart.prompt.Enabled = true
+	elseif Grids.zoneOf(cart) then
+		-- Тары в буфере мусора и в зоне пустых тар мезонина просто ждут, пока их увезут
+		cart.prompt.Enabled = false
 	end
 end
 
@@ -159,15 +174,13 @@ local function parkAt(workTable: State.WorkTable, cart: State.Cart, index: numbe
 	workTable.carts[index] = cart
 end
 
-local function setShared(spot: BasePart, cart: State.Cart?)
+-- Поставить на место в начале ряда новую пустую общую тару для картона
+local function placeSharedCart(spot: BasePart)
+	local cart = newCart()
+	cart.kind = "cardboard"
+	placeOnSpot(cart, spot, State.folder("SharedCarts"))
 	State.sharedCarts[spot] = cart
-	local prompt = spot:FindFirstChildOfClass("ProximityPrompt")
-	if prompt then
-		prompt.Enabled = cart == nil
-	end
-	if cart then
-		Carts.refresh(cart)
-	end
+	Carts.refresh(cart)
 end
 
 -- Поставить тару, которую катит игрок, на свободное место у его стола
@@ -218,12 +231,32 @@ local function throwCardboard(player: Player, cart: State.Cart)
 	CartModel.addSheet(cart)
 	cart.count += 1
 	Carts.refresh(cart)
+
 	if cart.count >= State.capacity(cart) then
-		notify(
-			player,
-			"Тара для картона заполнена: откати её в буфер мусора",
-			"info"
-		)
+		local spot = sharedSpotOf(cart)
+		if spot then
+			-- Общая тара заполнилась: на её место сразу ставят пустую, а полную увозят в буфер мусора.
+			-- Никто никого не ждёт.
+			placeSharedCart(spot)
+			local waste = firstTagged("WasteBuffer")
+			if waste then
+				placeInGrid(cart, waste, WASTE_BUFFER_MAX)
+				Hauling.add(cart, "cardboard")
+			else
+				cart.model:Destroy()
+			end
+			notify(
+				player,
+				"Общая тара для картона заполнилась: её увезли и поставили пустую",
+				"info"
+			)
+		else
+			notify(
+				player,
+				"Тара для картона заполнена: откати её в буфер мусора",
+				"info"
+			)
+		end
 	end
 	Tasks.refresh(player)
 end
@@ -258,64 +291,27 @@ local function onOwnCart(player: Player, cart: State.Cart)
 	end
 end
 
--- Общая тара для картона: бросить картон или, если она полная, откатить её
-local function onSharedCart(player: Player, cart: State.Cart, spot: BasePart)
+-- Общая тара для картона: в неё бросают разрезанный картон
+local function onSharedCart(player: Player, cart: State.Cart)
 	if not State.isNear(player, cart.body, INTERACT_DISTANCE) then
 		return
 	end
-	local session = State.session(player)
-	local full = cart.count >= State.capacity(cart)
-
-	if session.cardboard then
-		if full then
-			notify(
-				player,
-				"Общая тара полная: откати её в буфер мусора или брось картон в свою",
-				"error"
-			)
-		else
-			throwCardboard(player, cart)
-		end
-		return
-	end
-
-	if not full then
-		notify(
-			player,
-			"Сюда бросают разрезанный картон. Откатывают тару, когда она полная",
-			"info"
-		)
-		return
-	end
-	if not State.handsFree(session) then
-		notify(player, "Руки заняты", "error")
-		return
-	end
-
-	setShared(spot, nil)
-	if push(player, cart) then
-		notify(
-			player,
-			"Не забудь потом привезти сюда пустую тару для картона",
-			"info"
-		)
-		Tasks.refresh(player)
+	if State.session(player).cardboard then
+		throwCardboard(player, cart)
 	else
-		setShared(spot, cart)
+		notify(player, "Сюда бросают разрезанный картон", "info")
 	end
 end
 
--- Тара на товарном буфере: её берут на раскладку по мезонину
+local generateGoodsCart: (Config.Category) -> State.Cart
+local refillGoodsBuffers: () -> ()
+
+-- Тара на товарном буфере: раскладчик получает свою новую тару с товаром этой категории
 local function onGoodsBufferCart(player: Player, cart: State.Cart)
 	if not State.isNear(player, cart.body, INTERACT_DISTANCE) then
 		return
 	end
-	if not Rating.hasK2Access(player) then
-		notify(
-			player,
-			`Раскладка на мезонине открывается с рейтинга {Config.Rating.K2Access}`,
-			"error"
-		)
+	if not onOperation(player, "putaway", "Раскладка") then
 		return
 	end
 	local session = State.session(player)
@@ -323,23 +319,27 @@ local function onGoodsBufferCart(player: Player, cart: State.Cart)
 		notify(player, "Сначала закончи то, что делаешь сейчас", "error")
 		return
 	end
-
-	local zone = Grids.zoneOf(cart)
-	Grids.remove(cart)
-	if push(player, cart) then
-		Jobs.startPutaway(player, cart)
-		Tasks.refresh(player)
-	elseif zone then
-		placeInGrid(cart, zone, GOODS_BUFFER_MAX)
+	local category = cart.category
+	if not category then
+		return
 	end
+
+	local fresh = generateGoodsCart(category)
+	if not push(player, fresh) then
+		fresh.model:Destroy()
+		return
+	end
+	-- Тара с буфера уходит вместе с раскладчиком, на её место привозят новую
+	Grids.remove(cart)
+	cart.model:Destroy()
+	refillGoodsBuffers()
+	Jobs.startPutaway(player, fresh)
+	Tasks.refresh(player)
 end
 
 local function onCartPrompt(player: Player, cart: State.Cart)
-	local spot = sharedSpotOf(cart)
-	if spot then
-		onSharedCart(player, cart, spot)
-	elseif Hauling.get(cart) then
-		Tugger.hitch(player, cart)
+	if sharedSpotOf(cart) then
+		onSharedCart(player, cart)
 	elseif inGoodsBuffer(cart) then
 		onGoodsBufferCart(player, cart)
 	else
@@ -560,9 +560,8 @@ local function onWasteBuffer(player: Player, zone: BasePart)
 		end
 		stopPushing(player, cart)
 		placeInGrid(cart, zone, WASTE_BUFFER_MAX)
-		-- Отсюда тару с картоном увезёт на утилизацию карщик (или NPC)
+		-- Отсюда тары с картоном увозит на утилизацию NPC-тягач
 		Hauling.add(cart, "cardboard")
-		Carts.refresh(cart)
 		notify(
 			player,
 			`Тара с картоном сдана в буфер мусора: {cart.count} шт.`,
@@ -585,30 +584,6 @@ local function onWasteBuffer(player: Player, zone: BasePart)
 	notify(player, "Сюда откатывают тары с картоном", "info")
 end
 
--- Пустое место общей тары: сюда можно поставить пустую или картонную тару
-local function onSharedSpot(player: Player, spot: BasePart)
-	if State.sharedCarts[spot] or not State.isNear(player, spot, INTERACT_DISTANCE) then
-		return
-	end
-	local session = State.session(player)
-	local cart = session.cart
-	if not cart then
-		notify(player, "Привези сюда пустую тару из буфера пустых тар", "info")
-		return
-	end
-	if cart.kind == "goods" or cart.kind == "order" or session.job then
-		notify(player, "Это место для тары с картоном", "error")
-		return
-	end
-
-	stopPushing(player, cart)
-	cart.kind = "cardboard"
-	placeOnSpot(cart, spot, State.folder("SharedCarts"))
-	setShared(spot, cart)
-	notify(player, "Общая тара для картона на месте", "success")
-	Tasks.refresh(player)
-end
-
 -- Зона пустых тар мезонина: вернуть пустую тару после раскладки или взять тару на сборку
 local function onK2Empty(player: Player, zone: BasePart)
 	if not State.isNear(player, zone, zoneReach(zone)) then
@@ -627,24 +602,14 @@ local function onK2Empty(player: Player, zone: BasePart)
 		cart.kind = nil
 		cart.title = nil
 		placeInGrid(cart, zone, K2_EMPTY_MAX)
-		-- Отсюда пустую тару отвезёт в буфер пустых тар К4 карщик (или NPC)
+		-- Отсюда пустые тары увозит NPC-тягач
 		Hauling.add(cart, "empty")
-		Carts.refresh(cart)
-		notify(
-			player,
-			"Пустая тара оставлена в зоне мезонина: её заберёт карщик",
-			"info"
-		)
+		notify(player, "Пустая тара возвращена в зону мезонина", "info")
 		Tasks.refresh(player)
 		return
 	end
 
-	if not Rating.hasK2Access(player) then
-		notify(
-			player,
-			`Сборка на мезонине открывается с рейтинга {Config.Rating.K2Access}`,
-			"error"
-		)
+	if not onOperation(player, "picking", "Сборка") then
 		return
 	end
 	if not State.handsFree(session) or session.job then
@@ -660,11 +625,7 @@ local function onK2Empty(player: Player, zone: BasePart)
 	if not Jobs.startPicking(player, fresh) then
 		stopPushing(player, fresh)
 		fresh.model:Destroy()
-		notify(
-			player,
-			"На мезонине сейчас нечего собирать: сначала нужна раскладка",
-			"error"
-		)
+		notify(player, "На карте нет ячеек мезонина", "error")
 		return
 	end
 	Tasks.refresh(player)
@@ -698,7 +659,7 @@ local function onShipping(player: Player, zone: BasePart)
 end
 
 -- Игрок умер или ушёл: тара встаёт на свободное место у стола или исчезает.
--- Тара задания на мезонине исчезает, а бронь товара снимается.
+-- Тара задания на мезонине исчезает вместе с заданием.
 function Carts.dropPushed(player: Player, returnToTable: boolean)
 	local session = State.sessions[player]
 	if not session then
@@ -706,7 +667,7 @@ function Carts.dropPushed(player: Player, returnToTable: boolean)
 	end
 	local job = session.job
 	if job then
-		Jobs.cancel(player)
+		Jobs.finish(player)
 	end
 	local cart = session.cart
 	if not cart then
@@ -730,8 +691,8 @@ function Carts.cleanupTable(workTable: State.WorkTable)
 	table.clear(workTable.carts)
 end
 
--- Соседняя смена приёмки: тара с товаром одной категории для раскладки
-local function generateGoodsCart(category: Config.Category): State.Cart
+-- Тара с товаром одной категории для раскладки
+generateGoodsCart = function(category: Config.Category): State.Cart
 	local cart = newCart()
 	cart.kind = "goods"
 	cart.category = category
@@ -751,8 +712,8 @@ local function generateGoodsCart(category: Config.Category): State.Cart
 	return cart
 end
 
--- Если на зоне товарного буфера почти нет тар, их привозит соседняя смена: раскладчикам всегда есть работа
-local function refillGoodsBuffers()
+-- На каждой зоне товарного буфера всегда стоит несколько тар, чтобы раскладчикам было что взять
+refillGoodsBuffers = function()
 	for _, zone in CollectionService:GetTagged("BufferZone") do
 		local category = categoryById(zone:GetAttribute("Category"))
 		if zone:IsA("BasePart") and category then
@@ -811,31 +772,10 @@ function Carts.start()
 		addZonePrompt(zone, "Сдать заказ", "Отгрузка", onShipping)
 	end)
 
-	-- В начале каждого ряда сразу стоит общая тара для картона
-	forTagged("CardboardSpot", function(spot)
-		local prompt = Instance.new("ProximityPrompt")
-		prompt.ActionText = "Поставить тару для картона"
-		prompt.ObjectText = "Место общей тары"
-		prompt.MaxActivationDistance = INTERACT_DISTANCE
-		prompt.RequiresLineOfSight = false
-		prompt.Parent = spot
-		prompt.Triggered:Connect(function(player)
-			onSharedSpot(player, spot)
-		end)
-
-		local cart = newCart()
-		cart.kind = "cardboard"
-		placeOnSpot(cart, spot, State.folder("SharedCarts"))
-		setShared(spot, cart)
-	end)
+	-- В начале каждого ряда всегда стоит общая тара для картона
+	forTagged("CardboardSpot", placeSharedCart)
 
 	refillGoodsBuffers()
-	task.spawn(function()
-		while true do
-			task.wait(Config.Mezzanine.BufferRefill)
-			refillGoodsBuffers()
-		end
-	end)
 end
 
 return Carts

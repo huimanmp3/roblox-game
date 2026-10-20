@@ -4,6 +4,7 @@
 --               кликаешь ТСД по ячейке и кладёшь туда всю пачку этого товара;
 --   сборка    — берёшь пустую тару в зоне мезонина, на ТСД приходит заказ, собираешь товар
 --               по ячейкам разных этажей и сдаёшь тару в зону отгрузки.
+-- Задания генерируются для каждого игрока отдельно и не зависят от работы других.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -27,27 +28,16 @@ local function pay(player: Player, item: Config.ItemType, amount: number, share:
 	return kopecks
 end
 
-local function releaseTarget(player: Player, job: State.Job)
-	local target = job.target
-	if target then
-		Mezzanine.unclaim(target, player)
-	end
+-- Раскладка: выбрать следующий товар из тары и ячейку для него
+local function assignPutaway(job: State.Job)
 	job.target = nil
 	job.targetItem = nil
-end
-
--- Раскладка: выбрать следующий товар из тары и ячейку для него
-function Jobs.assignPutaway(player: Player, job: State.Job)
-	releaseTarget(player, job)
 	for item, amount in job.cart.contents do
-		if amount > 0 then
-			local cell = Mezzanine.findPutawayCell(item, player)
-			if cell then
-				Mezzanine.claim(cell, player)
-				job.target = cell
-				job.targetItem = item
-				return
-			end
+		local cell = Mezzanine.cellFor(item)
+		if amount > 0 and cell then
+			job.target = cell
+			job.targetItem = item
+			return
 		end
 	end
 end
@@ -62,7 +52,7 @@ function Jobs.startPutaway(player: Player, cart: State.Cart)
 		lines = {},
 	}
 	State.session(player).job = job
-	Jobs.assignPutaway(player, job)
+	assignPutaway(job)
 	notify(
 		player,
 		"Раскладка: ТСД подскажет, какой товар в какую ячейку нести",
@@ -70,7 +60,7 @@ function Jobs.startPutaway(player: Player, cart: State.Cart)
 	)
 end
 
--- Сборка: на ТСД приходит заказ. false — если на мезонине сейчас нечего собирать.
+-- Сборка: на ТСД приходит заказ. false — если на карте нет ячеек мезонина.
 function Jobs.startPicking(player: Player, cart: State.Cart): boolean
 	local number, lines = Mezzanine.createOrder()
 	if #lines == 0 then
@@ -100,7 +90,7 @@ local function clickPutaway(player: Player, job: State.Job, cell: State.Cell)
 	local target = job.target
 	local item = job.targetItem
 	if not target or not item then
-		notify(player, "Для товара в таре сейчас нет свободной ячейки", "error")
+		notify(player, "Для товара в таре нет ячейки на мезонине", "error")
 		return
 	end
 	if cell ~= target then
@@ -108,16 +98,10 @@ local function clickPutaway(player: Player, job: State.Job, cell: State.Cell)
 		return
 	end
 
+	-- В ячейку уходит вся пачка этого товара
 	local cart = job.cart
-	local inCart = cart.contents[item] or 0
-	local amount = math.min(inCart, Mezzanine.space(cell, item))
-	if amount <= 0 then
-		Jobs.assignPutaway(player, job)
-		return
-	end
-
-	Mezzanine.put(cell, item, amount)
-	cart.contents[item] = if inCart - amount > 0 then inCart - amount else nil
+	local amount = cart.contents[item] or 0
+	cart.contents[item] = nil
 	cart.count -= amount
 	CartModel.syncVisuals(cart)
 
@@ -133,10 +117,8 @@ local function clickPutaway(player: Player, job: State.Job, cell: State.Cell)
 		cart.kind = nil
 		cart.category = nil
 		table.clear(cart.contents)
-		releaseTarget(player, job)
-	else
-		Jobs.assignPutaway(player, job)
 	end
+	assignPutaway(job)
 	CartModel.refreshLabels(cart)
 end
 
@@ -154,7 +136,6 @@ local function clickPicking(player: Player, job: State.Job, cell: State.Cell)
 	end
 
 	local cart = job.cart
-	Mezzanine.takeReserved(cell, line.qty)
 	line.picked = true
 	cart.contents[line.item] = (cart.contents[line.item] or 0) + line.qty
 	cart.count += line.qty
@@ -184,9 +165,7 @@ end
 function Jobs.clickCell(player: Player, cell: State.Cell)
 	local job = State.session(player).job
 	if not job then
-		local item = cell.item
-		local contents = if item and cell.qty > 0 then `{item.Name}, {cell.qty} шт.` else "пусто"
-		notify(player, `Ячейка {cell.address}: {contents}`, "info")
+		notify(player, `Ячейка {cell.address}: {cell.item.Name}`, "info")
 		return
 	end
 	if State.session(player).cart ~= job.cart then
@@ -231,30 +210,12 @@ function Jobs.ship(player: Player)
 	)
 end
 
--- Задание закончено (пустую тару вернули)
+-- Задание закончено (пустую тару вернули) или сорвалось (игрок умер или ушёл)
 function Jobs.finish(player: Player)
 	local session = State.sessions[player]
-	local job = if session then session.job else nil
-	if session and job then
-		releaseTarget(player, job)
+	if session then
 		session.job = nil
 	end
-end
-
--- Задание сорвалось (игрок умер или ушёл): снимаем бронь товара и закрепление ячеек
-function Jobs.cancel(player: Player)
-	local session = State.sessions[player]
-	local job = if session then session.job else nil
-	if not session or not job then
-		return
-	end
-	releaseTarget(player, job)
-	for _, line in job.lines do
-		if not line.picked then
-			Mezzanine.unreserve(line.cell, line.qty)
-		end
-	end
-	session.job = nil
 end
 
 return Jobs

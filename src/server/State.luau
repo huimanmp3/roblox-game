@@ -46,18 +46,13 @@ export type Cart = {
 	wrongPrices: { number },
 }
 
--- Ячейка стеллажа на мезонине. В ячейке лежит только один товар.
+-- Ячейка стеллажа на мезонине. За ячейкой закреплён один товар.
 export type Cell = {
 	part: BasePart,
 	address: string, -- «этаж-ряд-ячейка», например 2-05-12
 	floor: number,
 	category: Category,
-	item: ItemType?,
-	qty: number,
-	reserved: number, -- столько штук уже отложено под заказы сборщиков
-	claimedBy: Player?, -- раскладчик, которому ТСД назначил эту ячейку
-	label: TextLabel,
-	visual: BasePart?,
+	item: ItemType,
 }
 
 export type OrderLine = {
@@ -124,6 +119,7 @@ export type WorkTable = {
 
 export type Session = {
 	uniform: boolean,
+	operation: string?, -- выбранная в меню операция: "receiving", "putaway", "picking" или "tugger"
 	workTable: WorkTable?,
 	-- Что у игрока в руках: тележка, разрезанный картон или товар после пика
 	cart: Cart?,
@@ -139,7 +135,7 @@ local DISTANCE_TOLERANCE = 6 -- запас на задержку сети при
 local State = {
 	tables = {} :: { WorkTable },
 	sessions = {} :: { [Player]: Session },
-	-- Общие тары для картона в начале рядов: место → тара (или nil, если место пустое)
+	-- Общие тары для картона в начале рядов: место → тара
 	sharedCarts = {} :: { [BasePart]: Cart },
 }
 
@@ -151,6 +147,7 @@ function State.session(player: Player): Session
 
 	local session: Session = {
 		uniform = false,
+		operation = nil,
 		workTable = nil,
 		cart = nil,
 		cardboard = nil,

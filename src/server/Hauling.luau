@@ -1,9 +1,10 @@
 --!strict
--- Тары, которые ждут вывоза:
---   тары с картоном из буфера мусора К4 едут на утилизацию в К2 ("cardboard");
---   пустые тары из зоны мезонина едут в буфер пустых тар К4 ("empty").
--- Возят их карщики на тягачах. Если тара ждёт карщика дольше Config.Tugger.WaitBeforeNpc
--- или карщик подцепил её и не довёз за Config.Tugger.DeliverBeforeNpc, её отвозит NPC.
+-- Тары, которые нужно вывезти:
+--   тары с картоном едут на утилизацию в К2 ("cardboard");
+--   пустые тары едут в буфер пустых тар К4 ("empty").
+-- Тары, сданные игроками в буфер мусора и зону пустых тар мезонина, через Config.Tugger.WaitBeforeNpc
+-- увозит NPC-тягач. Карщики-игроки возят свои тары, выданные на погрузке. Если карщик
+-- не довёз их за Config.Tugger.DeliverBeforeNpc, тары отцепляются и их довозит NPC.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -46,10 +47,6 @@ function Hauling.add(cart: State.Cart, kind: string)
 	}
 end
 
-function Hauling.get(cart: State.Cart): Waiting?
-	return waiting[cart]
-end
-
 function Hauling.remove(cart: State.Cart)
 	waiting[cart] = nil
 end
@@ -69,21 +66,6 @@ function Hauling.release(cart: State.Cart, immediately: boolean)
 		entry.claimedBy = nil
 		entry.since = if immediately then -math.huge else os.clock()
 	end
-end
-
--- Сколько тар каждого вида ждут карщика
-function Hauling.counts(): (number, number)
-	local cardboard, empty = 0, 0
-	for _, entry in waiting do
-		if not entry.claimedBy and not entry.npc then
-			if entry.kind == "cardboard" then
-				cardboard += 1
-			else
-				empty += 1
-			end
-		end
-	end
-	return cardboard, empty
 end
 
 -- Подписка на тары, которые карщик не довёз вовремя
