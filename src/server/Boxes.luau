@@ -1,8 +1,7 @@
 --!strict
--- Коробка на столе: вскрыть, доставать товар по одному, разрезать пустую
--- и отнести картон в контейнер «КАРТОН» в начале ряда.
+-- Коробка на столе: вскрыть, доставать товар по одному, разрезать пустую.
+-- Разрезанный картон бросают в тару для картона: общую в начале ряда или свою у стола.
 
-local CollectionService = game:GetService("CollectionService")
 local TweenService = game:GetService("TweenService")
 
 local Carry = require(script.Parent.Carry)
@@ -14,7 +13,6 @@ local Tasks = require(script.Parent.Tasks)
 local notify = require(script.Parent.Notify)
 
 local INTERACT_DISTANCE = 10
-local BIN_DISTANCE = 10
 local MOVE_TIME = 0.25
 local HELD_OFFSET = CFrame.new(0.6, 0, -1.5) -- товар в руке перед персонажем
 local CARDBOARD_OFFSET = CFrame.new(0, 0, -1.4) * CFrame.Angles(math.rad(75), 0, 0)
@@ -87,6 +85,15 @@ local function cut(player: Player, workTable: State.WorkTable, box: State.Box)
 	if not character then
 		return
 	end
+	-- Если картон некуда деть, лучше не резать: иначе игрок застрянет с ним в руках
+	if not State.cardboardTarget(workTable) then
+		notify(
+			player,
+			"Некуда деть картон: поставь у стола пустую тару или привези пустую в начало ряда вместо полной общей",
+			"error"
+		)
+		return
+	end
 
 	local cardboard = Instance.new("Part")
 	cardboard.Name = "Cardboard"
@@ -104,7 +111,7 @@ local function cut(player: Player, workTable: State.WorkTable, box: State.Box)
 	State.session(player).cardboard = cardboard
 	notify(
 		player,
-		"Коробка разрезана. Отнеси картон в контейнер «КАРТОН» в начале ряда",
+		"Коробка разрезана. Брось картон в тару для картона (E у тары)",
 		"success"
 	)
 end
@@ -173,7 +180,7 @@ function Boxes.click(player: Player, workTable: State.WorkTable)
 		else
 			notify(
 				player,
-				"Этот товар не из этой коробки. Положи его в тележку",
+				"Этот товар не из этой коробки. Положи его в тару",
 				"error"
 			)
 		end
@@ -195,7 +202,7 @@ function Boxes.click(player: Player, workTable: State.WorkTable)
 	if not State.hasCarts(workTable) then
 		notify(
 			player,
-			"Сначала поставь у стола тележку: их берут на стоянке в начале ряда",
+			"Сначала поставь у стола тару: пустые берут в буфере пустых тар",
 			"error"
 		)
 		return
@@ -248,39 +255,6 @@ function Boxes.cleanupTable(workTable: State.WorkTable)
 	if box then
 		box.part:Destroy()
 		workTable.box = nil
-	end
-end
-
-local function throwCardboard(player: Player, bin: BasePart)
-	if not State.isNear(player, bin, BIN_DISTANCE) then
-		return
-	end
-	local session = State.session(player)
-	local cardboard = session.cardboard
-	if not cardboard then
-		notify(player, "Сюда выбрасывают разрезанные коробки", "info")
-		return
-	end
-
-	cardboard:Destroy()
-	session.cardboard = nil
-	notify(player, "Картон выброшен", "success")
-	Tasks.refresh(player)
-end
-
-function Boxes.start()
-	for _, bin in CollectionService:GetTagged("CardboardBin") do
-		if bin:IsA("BasePart") then
-			local prompt = Instance.new("ProximityPrompt")
-			prompt.ActionText = "Выбросить картон"
-			prompt.ObjectText = "Картон"
-			prompt.MaxActivationDistance = BIN_DISTANCE
-			prompt.RequiresLineOfSight = false
-			prompt.Parent = bin
-			prompt.Triggered:Connect(function(player)
-				throwCardboard(player, bin)
-			end)
-		end
 	end
 end
 

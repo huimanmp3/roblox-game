@@ -5,8 +5,9 @@
 local Parts = require(script.Parent.Parts)
 
 local F = Parts.FLOOR
-local MIN_X, MAX_X = -150, 150
-local MIN_Z, MAX_Z = -100, 100
+-- Склад расширен на север и восток, чтобы в блоке К4 поместились большие буферы
+local MIN_X, MAX_X = -150, 170
+local MIN_Z, MAX_Z = -100, 200
 local HEIGHT = 30
 local ENTRANCE_HALF_WIDTH = 12
 local AISLE_HALF_WIDTH = 10 -- центральный проход между блоками К2 и К4
@@ -118,7 +119,7 @@ local function buildBlockK2(model: Model)
 		Enum.Material.DiamondPlate,
 		model
 	)
-	for _, z in { -60, 20 } do
+	for _, z in { -60, 20, 100, 170 } do
 		local cframe = CFrame.new(fenceX + 0.2, F + 7, z) * CFrame.Angles(0, math.pi / 2, 0)
 		Parts.sign(
 			"БЛОК К2 · ЗАКРЫТ",
@@ -131,7 +132,7 @@ local function buildBlockK2(model: Model)
 
 	-- Одинаковое зерно: стеллажи выглядят одинаково при каждом запуске
 	local random = Random.new(2)
-	for _, z in { -70, -35, 0, 35, 70 } do
+	for _, z in { -70, -35, 0, 35, 70, 105, 140, 175 } do
 		buildDecorRack(model, MIN_X + 15, fenceX - 15, z, random)
 	end
 end

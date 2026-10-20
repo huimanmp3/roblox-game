@@ -52,35 +52,59 @@ local function describeHands(session: State.Session, workTable: State.WorkTable)
 	local cart = session.cart
 	if cart then
 		local category = cart.category
+		if cart.kind == "cardboard" and cart.count > 0 then
+			return "Откати тару с картоном в буфер мусора",
+				firstTagged("WasteBuffer"),
+				"Буфер мусора"
+		end
 		if cart.count > 0 and category then
-			return `Отвези тележку на буфер «{category.Name}»`,
-				findBufferZone(category.Id),
-				`Буфер «{category.Name}»`
+			local text = `Отвези тару на буфер «{category.Name}»`
+			return text, findBufferZone(category.Id), `Буфер «{category.Name}»`
 		end
 		if State.freeCartSpot(workTable) then
-			return `Поставь тележку у своего стола №{workTable.number} (E у стола)`,
+			return `Поставь тару у своего стола №{workTable.number} (E у стола)`,
 				desk,
 				tableLabel
 		end
-		return "У стола нет места: верни пустую тележку на стоянку",
-			nearestTagged("CartParking", desk.Position),
-			"Тележки"
+		local text =
+			"У стола нет места: верни пустую тару в буфер пустых тар"
+		return text, nearestTagged("CartParking", desk.Position), "Пустые тары"
 	end
 
 	if session.cardboard then
-		return "Отнеси картон в контейнер «КАРТОН» в начале ряда",
-			nearestTagged("CardboardBin", desk.Position),
-			"Картон"
+		local target = State.cardboardTarget(workTable)
+		if target then
+			return "Брось картон в тару для картона (E у тары)",
+				target.body,
+				"Тара для картона"
+		end
+		local text =
+			"Тары для картона нет или она полная: выбрось картон в буфере мусора"
+		return text, firstTagged("WasteBuffer"), "Буфер мусора"
 	end
 
 	local held = session.held
 	if held then
-		return `В руке: {held.item.Name} («{held.category.Name}»). Кликни ТСД по тележке для этой категории или по коробке, чтобы вернуть товар`,
-			desk,
-			tableLabel
+		local text =
+			`В руке: {held.item.Name} («{held.category.Name}»). Кликни ТСД по таре для этой категории или по коробке, чтобы вернуть товар`
+		return text, desk, tableLabel
 	end
 
 	return nil, nil, ""
+end
+
+-- Почему некуда деть картон и что с этим сделать
+local function describeNoCardboardTarget(workTable: State.WorkTable): (string, BasePart?, string)
+	local spot = workTable.cardboardSpot
+	local shared = if spot then State.sharedCarts[spot] else nil
+	if shared then
+		return "Общая тара для картона полная: откати её в буфер мусора (E у тары)",
+			shared.body,
+			"Тара для картона"
+	end
+	local text =
+		"Нет тары для картона: привези пустую из буфера пустых тар в начало ряда или к столу"
+	return text, nearestTagged("CartParking", workTable.desk.Position), "Пустые тары"
 end
 
 -- Возвращает текст задания, цель стрелки и подпись над целью
@@ -122,22 +146,25 @@ local function describe(player: Player, session: State.Session): (string, BasePa
 			return "Вскрой коробку на столе: удерживай E", desk, tableLabel
 		end
 		if box.itemsLeft == 0 then
+			if not State.cardboardTarget(workTable) then
+				return describeNoCardboardTarget(workTable)
+			end
 			return "Коробка пустая: разрежь её, удерживая E", desk, tableLabel
 		end
 		if not State.hasCarts(workTable) then
-			return "Возьми пустую тележку на стоянке в начале ряда и поставь у стола",
-				nearestTagged("CartParking", desk.Position),
-				"Тележки"
+			local text =
+				"Возьми пустую тару в буфере пустых тар и поставь у стола"
+			return text, nearestTagged("CartParking", desk.Position), "Пустые тары"
 		end
 		local price = string.format("%.2f", Pricing.price(box.item) / 100)
 		local text =
-			`Кликай ТСД по коробке: достань товар и положи его в тележку. В коробке: {box.itemsLeft} шт., пик {price} ₽`
+			`Кликай ТСД по коробке: достань товар и положи его в тару. В коробке: {box.itemsLeft} шт., пик {price} ₽`
 		return text, desk, tableLabel
 	end
 
 	local pallet = workTable.pallet
 	if not pallet then
-		return "Жди палет: грузчик уже едет. Полные тележки пока можно отвезти на буфер",
+		return "Жди палет: грузчик уже едет. Полные тары пока можно отвезти на буфер",
 			desk,
 			tableLabel
 	end
@@ -150,7 +177,7 @@ local function describe(player: Player, session: State.Session): (string, BasePa
 	return text, desk, tableLabel
 end
 
--- Подсказки на столе, коробке и тележках зависят от того, что сейчас в руках у хозяина стола
+-- Подсказки на столе, коробке и тарах зависят от того, что сейчас в руках у хозяина стола
 function Tasks.updatePrompts(workTable: State.WorkTable)
 	local owner = workTable.owner
 	local session = if owner then State.sessions[owner] else nil
@@ -160,7 +187,7 @@ function Tasks.updatePrompts(workTable: State.WorkTable)
 	if session and not workTable.occupied then
 		deskAction = "Занять стол"
 	elseif session and session.cart and State.freeCartSpot(workTable) then
-		deskAction = "Поставить тележку"
+		deskAction = "Поставить тару"
 	end
 	if deskAction then
 		workTable.deskPrompt.ActionText = deskAction
@@ -183,7 +210,16 @@ function Tasks.updatePrompts(workTable: State.WorkTable)
 	end
 
 	for _, cart in workTable.carts do
-		cart.prompt.Enabled = handsFree
+		local cartAction: string? = nil
+		if handsFree then
+			cartAction = "Взять тару"
+		elseif session and session.cardboard and State.acceptsCardboard(cart) then
+			cartAction = "Бросить картон"
+		end
+		if cartAction then
+			cart.prompt.ActionText = cartAction
+		end
+		cart.prompt.Enabled = cartAction ~= nil
 	end
 end
 

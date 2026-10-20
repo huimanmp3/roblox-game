@@ -2,7 +2,6 @@
 -- Точка входа сервера: строит карту и запускает системы игры по порядку.
 
 local Boards = require(script.Parent.Boards)
-local Boxes = require(script.Parent.Boxes)
 local Carts = require(script.Parent.Carts)
 local Map = require(script.Parent.Map)
 local PlayerData = require(script.Parent.PlayerData)
@@ -17,6 +16,5 @@ Pricing.start()
 Uniform.start()
 Tables.start()
 Boards.start()
-Boxes.start()
 Carts.start()
 Scanning.start()

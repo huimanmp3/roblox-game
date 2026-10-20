@@ -34,8 +34,11 @@ export type Cart = {
 	body: BasePart, -- дно тележки, к нему приварено всё остальное
 	prompt: ProximityPrompt,
 	labels: { TextLabel },
+	-- Чем занята тара: "goods" — товар, "cardboard" — картон, nil — пустая.
+	-- Назначение задаёт первое, что в неё положили.
+	kind: string?,
 	category: Category?, -- категория первого положенного товара
-	count: number,
+	count: number, -- штук товара или разрезанных коробок
 	visible: number, -- сколько фигурок товара видно внутри
 	-- Цены пиков товара не той категории (в копейках): за него могут оштрафовать на буфере
 	wrongPrices: { number },
@@ -65,6 +68,7 @@ export type WorkTable = {
 	pallet: Pallet?,
 	box: Box?, -- коробка на столе
 	carts: { [number]: Cart }, -- тележки у стола по номеру места
+	cardboardSpot: BasePart?, -- место общей тары для картона в начале ряда
 	board: Board?, -- табло со средним пиком
 	picks: number, -- сколько пиков сделал хозяин стола
 	earned: number, -- сколько он за них заработал, в копейках
@@ -89,6 +93,8 @@ local DISTANCE_TOLERANCE = 6 -- запас на задержку сети при
 local State = {
 	tables = {} :: { WorkTable },
 	sessions = {} :: { [Player]: Session },
+	-- Общие тары для картона в начале рядов: место → тара (или nil, если место пустое)
+	sharedCarts = {} :: { [BasePart]: Cart },
 }
 
 function State.session(player: Player): Session
@@ -128,6 +134,35 @@ end
 
 function State.hasCarts(workTable: WorkTable): boolean
 	return next(workTable.carts) ~= nil
+end
+
+function State.capacity(cart: Cart): number
+	return if cart.kind == "cardboard" then Config.CardboardPerCart else Config.CartCapacity
+end
+
+-- В тару можно бросить картон, если она пустая или уже картонная и не полная
+function State.acceptsCardboard(cart: Cart): boolean
+	return (cart.kind == nil or cart.kind == "cardboard") and cart.count < State.capacity(cart)
+end
+
+-- Куда хозяин стола может бросить картон: своя тара у стола или общая в начале ряда.
+-- Своя картонная тара важнее пустой, пустую лучше оставить под товар.
+function State.cardboardTarget(workTable: WorkTable): Cart?
+	local empty: Cart? = nil
+	for _, cart in workTable.carts do
+		if cart.kind == "cardboard" and State.acceptsCardboard(cart) then
+			return cart
+		elseif cart.kind == nil and not empty then
+			empty = cart
+		end
+	end
+
+	local spot = workTable.cardboardSpot
+	local shared = if spot then State.sharedCarts[spot] else nil
+	if shared and State.acceptsCardboard(shared) then
+		return shared
+	end
+	return empty
 end
 
 -- Корневая часть персонажа, если он есть и жив

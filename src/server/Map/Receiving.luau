@@ -1,6 +1,6 @@
 --!strict
--- Блок К4, приёмка: стол старших, рабочие столы, стоянки тележек, контейнеры для картона,
--- ворота для погрузчиков и буфер.
+-- Блок К4, приёмка: стол старших, рабочие столы, общие тары для картона в начале рядов,
+-- ворота для погрузчиков и три буфера: товарный по категориям, пустых тар и мусора.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -12,22 +12,25 @@ local ROWS_Z = { -50, -10, 30 }
 local TABLES_X = { 35, 57, 79, 101, 123 }
 -- Проезд погрузчика за рядом столов. Совпадает с APPROACH_DISTANCE в Forklift.
 local AISLE_OFFSET = 10
-local ROW_END_X = 18 -- начало ряда: стоянка тележек и контейнер для картона
+local ROW_END_X = 18 -- начало ряда: место общей тары для картона
 local CART_SPOTS_X = { -7, 0, 7 } -- места для тележек за спиной игрока
 local CART_SPOTS_Z = -9
-local DOCK_X = 143
-local EAST_WALL_X = 150
-local BUFFER_MIN_X, BUFFER_MAX_X = 22, 140
-local BUFFER_Z = 75
-local BUFFER_DEPTH = 30
-local BUFFER_SIGN_Z = 98 -- общая вывеска «БУФЕР» у северной стены
+local DOCK_X = 163
+local EAST_WALL_X = 170
+-- Товарный буфер: по зоне на категорию
+local BUFFER_MIN_X, BUFFER_MAX_X = 22, 160
+local BUFFER_Z = 77.5
+local BUFFER_DEPTH = 35
+-- За товарным буфером: буфер пустых тар (запад) и буфер мусора (восток)
+local EMPTY_MIN_X, EMPTY_MAX_X = 22, 90
+local WASTE_MIN_X, WASTE_MAX_X = 100, 160
+local BACK_MIN_Z, BACK_MAX_Z = 110, 170
 
 local DESK_COLOR = Color3.fromRGB(235, 235, 240)
 local DARK_COLOR = Color3.fromRGB(35, 35, 40)
 local SPOT_COLOR = Color3.fromRGB(241, 196, 15)
 local CART_COLOR = Color3.fromRGB(150, 155, 160)
-local BIN_COLOR = Color3.fromRGB(70, 75, 85)
-local CARDBOARD_COLOR = Color3.fromRGB(196, 154, 108)
+local WASTE_COLOR = Color3.fromRGB(150, 110, 70)
 local SKIN_COLOR = Color3.fromRGB(234, 184, 146)
 
 local Receiving = {}
@@ -151,8 +154,12 @@ local function buildSeniorDesk(parent: Instance)
 	}, parent)
 end
 
--- Тележка для красоты: корпус на колёсах, как настоящие на стоянке
+-- Пустая тара для вида: корпус на тёмном основании с колёсами
 local function buildDecorCart(base: CFrame, parent: Instance)
+	Parts.part(
+		{ Name = "CartBase", Size = Vector3.new(3, 0.8, 5), CFrame = base * CFrame.new(0, 0.4, 0), Color = DARK_COLOR },
+		parent
+	)
 	Parts.part({
 		Name = "Cart",
 		Size = Vector3.new(3, 3.4, 5),
@@ -160,56 +167,27 @@ local function buildDecorCart(base: CFrame, parent: Instance)
 		Color = CART_COLOR,
 		Material = Enum.Material.Metal,
 	}, parent)
-	for _, x in { -1.2, 1.2 } do
-		for _, z in { -2, 2 } do
-			Parts.part({
-				Name = "Wheel",
-				Shape = Enum.PartType.Cylinder,
-				Size = Vector3.new(0.4, 0.7, 0.7),
-				CFrame = base * CFrame.new(x, 0.35, z),
-				Color = DARK_COLOR,
-			}, parent)
-		end
-	end
 end
 
--- Начало ряда: стоянка пустых тележек и контейнер для разрезанных коробок
-local function buildRowEnd(base: CFrame, parent: Instance)
-	local rowEnd = Instance.new("Model")
-	rowEnd.Name = "RowEnd"
-	rowEnd.Parent = parent
-
-	local parking = Parts.part({
-		Name = "CartParking",
-		Size = Vector3.new(7, 0.05, 12),
-		CFrame = base * CFrame.new(0, 0.025, -9),
-		Color = CART_COLOR,
-		Transparency = 0.5,
+-- Начало ряда: место общей тары для картона (саму тару ставит Carts при запуске)
+local function buildCardboardSpot(base: CFrame, parent: Instance)
+	local spot = Parts.part({
+		Name = "CardboardSpot",
+		Size = Vector3.new(3.4, 0.05, 5.4),
+		CFrame = base * CFrame.new(0, 0.025, 0),
+		Color = WASTE_COLOR,
+		Transparency = 0.4,
 		CanCollide = false,
 		CanQuery = false,
-	}, rowEnd)
-	Parts.tag(parking, "CartParking")
-	for _, x in { -1.7, 1.7 } do
-		buildDecorCart(base * CFrame.new(x, 0, -9), rowEnd)
-	end
-	Parts.sign("ТЕЛЕЖКИ", base * CFrame.new(0, 7.5, -9), Vector3.new(6, 1.6, 0.2), DARK_COLOR, rowEnd)
-
-	local bin = Parts.part({
-		Name = "CardboardBin",
-		Size = Vector3.new(5, 4, 4),
-		CFrame = base * CFrame.new(0, 2, 1),
-		Color = BIN_COLOR,
-		Material = Enum.Material.Metal,
-	}, rowEnd)
-	Parts.tag(bin, "CardboardBin")
-	Parts.part({
-		Name = "CardboardPile",
-		Size = Vector3.new(4.4, 0.3, 3.4),
-		CFrame = base * CFrame.new(0, 4.15, 1),
-		Color = CARDBOARD_COLOR,
-		Material = Enum.Material.Cardboard,
-	}, rowEnd)
-	Parts.sign("КАРТОН", base * CFrame.new(0, 6.5, 1), Vector3.new(5, 1.6, 0.2), BIN_COLOR, rowEnd)
+	}, parent)
+	Parts.tag(spot, "CardboardSpot")
+	Parts.sign(
+		"ТАРА ДЛЯ КАРТОНА",
+		base * CFrame.new(0, 7, 0),
+		Vector3.new(7, 1.4, 0.2),
+		WASTE_COLOR,
+		parent
+	)
 end
 
 -- Ворота в восточной стене: отсюда выезжают погрузчики
@@ -235,11 +213,11 @@ local function buildDock(z: number, gateNumber: number, parent: Instance)
 	Parts.sign(`ВОРОТА {gateNumber}`, signCFrame, Vector3.new(10, 2, 0.3), Color3.fromRGB(50, 50, 60), parent)
 end
 
--- Буфер: по зоне на каждую категорию из Config.Categories
-local function buildBuffer(parent: Instance)
+-- Товарный буфер: по зоне на каждую категорию из Config.Categories
+local function buildGoodsBuffer(parent: Instance)
 	local categories = Config.Categories
 	local slot = (BUFFER_MAX_X - BUFFER_MIN_X) / #categories
-	local width = math.min(18, slot - 2)
+	local width = math.min(24, slot - 3)
 
 	for index, category in categories do
 		local x = BUFFER_MIN_X + slot * (index - 0.5)
@@ -254,12 +232,69 @@ local function buildBuffer(parent: Instance)
 		zone:SetAttribute("Category", category.Id)
 		Parts.tag(zone, "BufferZone")
 
-		local signCFrame = CFrame.new(x, F + 6, BUFFER_Z + BUFFER_DEPTH / 2 + 1)
+		local signCFrame = CFrame.new(x, F + 6, BUFFER_Z - BUFFER_DEPTH / 2 - 1)
 		Parts.sign(category.Name, signCFrame, Vector3.new(width, 3, 0.3), category.Color, parent)
 	end
 
 	local center = (BUFFER_MIN_X + BUFFER_MAX_X) / 2
-	Parts.sign("БУФЕР", CFrame.new(center, F + 15, BUFFER_SIGN_Z), Vector3.new(30, 5, 0.3), Parts.BRAND, parent)
+	local signZ = BUFFER_Z - BUFFER_DEPTH / 2 - 1
+	Parts.sign(
+		"ТОВАРНЫЙ БУФЕР",
+		CFrame.new(center, F + 13, signZ),
+		Vector3.new(36, 4, 0.3),
+		Parts.BRAND,
+		parent
+	)
+end
+
+-- Буфер пустых тар: отсюда берут пустые тары для приёмки. Тары стоят рядами, спереди проход.
+local function buildEmptyBuffer(parent: Instance)
+	local centerX = (EMPTY_MIN_X + EMPTY_MAX_X) / 2
+	local zone = Parts.part({
+		Name = "EmptyCartBuffer",
+		Size = Vector3.new(EMPTY_MAX_X - EMPTY_MIN_X, 0.05, BACK_MAX_Z - BACK_MIN_Z),
+		CFrame = CFrame.new(centerX, F + 0.025, (BACK_MIN_Z + BACK_MAX_Z) / 2),
+		Color = CART_COLOR,
+		Transparency = 0.5,
+		CanCollide = false,
+		CanQuery = false,
+	}, parent)
+	Parts.tag(zone, "CartParking")
+
+	for x = EMPTY_MIN_X + 6, EMPTY_MAX_X - 4, 7 do
+		for z = BACK_MIN_Z + 12, BACK_MAX_Z - 6, 8 do
+			buildDecorCart(CFrame.new(x, F, z), parent)
+		end
+	end
+	Parts.sign(
+		"БУФЕР ПУСТЫХ ТАР",
+		CFrame.new(centerX, F + 10, BACK_MIN_Z - 1),
+		Vector3.new(24, 3, 0.3),
+		DARK_COLOR,
+		parent
+	)
+end
+
+-- Буфер мусора: сюда откатывают тары с картоном
+local function buildWasteBuffer(parent: Instance)
+	local centerX = (WASTE_MIN_X + WASTE_MAX_X) / 2
+	local zone = Parts.part({
+		Name = "WasteBuffer",
+		Size = Vector3.new(WASTE_MAX_X - WASTE_MIN_X, 0.05, BACK_MAX_Z - BACK_MIN_Z),
+		CFrame = CFrame.new(centerX, F + 0.025, (BACK_MIN_Z + BACK_MAX_Z) / 2),
+		Color = WASTE_COLOR,
+		Transparency = 0.4,
+		CanCollide = false,
+		CanQuery = false,
+	}, parent)
+	Parts.tag(zone, "WasteBuffer")
+	Parts.sign(
+		"БУФЕР МУСОРА · КАРТОН",
+		CFrame.new(centerX, F + 10, BACK_MIN_Z - 1),
+		Vector3.new(26, 3, 0.3),
+		WASTE_COLOR,
+		parent
+	)
 end
 
 function Receiving.build(parent: Instance)
@@ -275,11 +310,13 @@ function Receiving.build(parent: Instance)
 			number += 1
 			buildTable(number, CFrame.new(x, F, z), model)
 		end
-		buildRowEnd(CFrame.new(ROW_END_X, F, z), model)
+		buildCardboardSpot(CFrame.new(ROW_END_X, F, z), model)
 		buildDock(z + AISLE_OFFSET, rowIndex, model)
 	end
 
-	buildBuffer(model)
+	buildGoodsBuffer(model)
+	buildEmptyBuffer(model)
+	buildWasteBuffer(model)
 end
 
 return Receiving

@@ -39,6 +39,22 @@ local function findCartSpots(model: Model): { BasePart }
 	return spots
 end
 
+-- Общая тара для картона, ближайшая к столу: обычно в начале его ряда
+local function nearestCardboardSpot(position: Vector3): BasePart?
+	local best: BasePart? = nil
+	local bestDistance = math.huge
+	for _, spot in CollectionService:GetTagged("CardboardSpot") do
+		if spot:IsA("BasePart") then
+			local distance = (spot.Position - position).Magnitude
+			if distance < bestDistance then
+				best = spot
+				bestDistance = distance
+			end
+		end
+	end
+	return best
+end
+
 local function makePrompt(parent: BasePart, action: string, object: string): ProximityPrompt
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = action
@@ -147,6 +163,7 @@ local function setupTable(model: Model)
 		pallet = nil,
 		box = nil,
 		carts = {},
+		cardboardSpot = nearestCardboardSpot(desk.Position),
 		board = if boardPart then Boards.create(boardPart) else nil,
 		picks = 0,
 		earned = 0,
@@ -187,7 +204,7 @@ local function release(player: Player)
 	State.sessions[player] = nil
 end
 
--- Игрок умер: тележка встаёт к столу, товар из руки возвращается в коробку
+-- Игрок умер: тара встаёт к столу, товар из руки возвращается в коробку
 local function dropEverything(player: Player)
 	Carts.dropPushed(player, true)
 	Boxes.dropAll(player)

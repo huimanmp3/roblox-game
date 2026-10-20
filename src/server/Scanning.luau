@@ -1,7 +1,7 @@
 --!strict
 -- ТСД (терминал сбора данных): выдача в зоне выдачи оборудования и клики им.
 -- Что делает клик, зависит от того, куда кликнули: QR-код палета, коробка на палете,
--- коробка на столе или тележка у стола.
+-- коробка на столе или тара у стола.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -26,7 +26,7 @@ local Scanning = {}
 local function createScannerTool(): Tool
 	local tool = Instance.new("Tool")
 	tool.Name = "ТСД"
-	tool.ToolTip = "Кликай по QR-коду палета, по коробкам и тележкам"
+	tool.ToolTip = "Кликай по QR-коду палета, по коробкам и тарам"
 	tool.CanBeDropped = false
 	tool:SetAttribute("Scanner", true)
 
@@ -82,7 +82,7 @@ local function giveScanner(player: Player)
 
 	notify(
 		player,
-		"ТСД выдан и уже в руке. Кликай им по палету, коробкам и тележкам",
+		"ТСД выдан и уже в руке. Кликай им по палету, коробкам и тарам",
 		"success"
 	)
 	Tasks.refresh(player)
