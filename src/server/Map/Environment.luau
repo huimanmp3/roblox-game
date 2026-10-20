@@ -20,9 +20,14 @@ local function effect(className: string, name: string): Instance
 end
 
 function Environment.apply()
-	-- Современный реалистичный свет с мягкими тенями
-	Lighting.LightingStyle = Enum.LightingStyle.Realistic
-	Lighting.PrioritizeLightingQuality = true
+	-- Современный реалистичный свет. Эти свойства есть не во всех версиях Roblox,
+	-- поэтому ставим их осторожно: если их нет, просто остаётся обычный свет
+	pcall(function()
+		(Lighting :: any).LightingStyle = Enum.LightingStyle.Realistic
+	end)
+	pcall(function()
+		(Lighting :: any).PrioritizeLightingQuality = true
+	end)
 	Lighting.GlobalShadows = true
 	Lighting.ShadowSoftness = 0.3
 	Lighting.ClockTime = 13

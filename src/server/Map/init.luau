@@ -31,8 +31,15 @@ function Map.build()
 	Logistics.build(map)
 	map.Parent = workspace
 
-	Theme.apply(map)
-	Environment.apply()
+	-- Оформление и свет не должны ломать игру: при ошибке карта остаётся как есть
+	local themed, themeError = pcall(Theme.apply, map)
+	if not themed then
+		warn(`Оформление карты не применилось: {themeError}`)
+	end
+	local lit, lightError = pcall(Environment.apply)
+	if not lit then
+		warn(`Свет не настроился: {lightError}`)
+	end
 end
 
 return Map
