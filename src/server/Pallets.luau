@@ -85,7 +85,7 @@ local function createBoxPart(category: Config.Category, item: Config.ItemType): 
 		label.BorderSizePixel = 0
 		label.Text = item.Name
 		label.TextScaled = true
-		label.Font = Enum.Font.GothamBold
+		label.Font = Enum.Font.BuilderSansBold
 		label.TextColor3 = Color3.new(1, 1, 1)
 		label.Parent = gui
 	end

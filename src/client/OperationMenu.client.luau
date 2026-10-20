@@ -14,6 +14,7 @@ local BACKGROUND = Color3.fromRGB(25, 20, 35)
 local CARD_TEXT = Color3.new(1, 1, 1)
 local MUTED_TEXT = Color3.fromRGB(200, 195, 215)
 local LOCKED_COLOR = Color3.fromRGB(70, 70, 80)
+local CARD_COLOR = Color3.fromRGB(38, 34, 50)
 local BUTTON_COLOR = Color3.fromRGB(112, 36, 186)
 
 local player = Players.LocalPlayer
@@ -45,7 +46,7 @@ local function addText(parent: GuiObject, text: string, size: number, color: Col
 	label.Size = UDim2.fromScale(1, 0)
 	label.AutomaticSize = Enum.AutomaticSize.Y
 	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBold
+	label.Font = Enum.Font.BuilderSansBold
 	label.TextSize = size
 	label.TextWrapped = true
 	label.TextXAlignment = Enum.TextXAlignment.Left
@@ -58,7 +59,7 @@ end
 local function addButton(parent: GuiObject, text: string, color: Color3): TextButton
 	local button = Instance.new("TextButton")
 	button.BackgroundColor3 = color
-	button.Font = Enum.Font.GothamBold
+	button.Font = Enum.Font.BuilderSansBold
 	button.TextSize = 18
 	button.TextColor3 = Color3.new(1, 1, 1)
 	button.Text = text
@@ -139,6 +140,8 @@ grid.Parent = menuContent
 type Card = {
 	operation: Operations.Operation,
 	button: TextButton,
+	accent: Frame,
+	title: TextLabel,
 	requirement: TextLabel,
 	stroke: UIStroke,
 }
@@ -149,7 +152,7 @@ for index, operation in Operations.List do
 	button.LayoutOrder = index
 	button.Text = ""
 	button.AutoButtonColor = true
-	button.BackgroundColor3 = operation.Color
+	button.BackgroundColor3 = CARD_COLOR
 	button.ClipsDescendants = true
 	button.Parent = menuContent
 	addCorner(button, 10)
@@ -157,7 +160,7 @@ for index, operation in Operations.List do
 
 	local stroke = Instance.new("UIStroke")
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	stroke.Color = Color3.new(1, 1, 1)
+	stroke.Color = operation.Color
 	stroke.Thickness = 3
 	stroke.Enabled = false
 	stroke.Parent = button
@@ -167,15 +170,26 @@ for index, operation in Operations.List do
 	layout.Padding = UDim.new(0, 4)
 	layout.Parent = button
 
-	addText(button, operation.Name, 22, CARD_TEXT, 1)
+	-- Тёмная карточка с цветной полосой сверху в цвет операции
+	local accent = Instance.new("Frame")
+	accent.LayoutOrder = 0
+	accent.Size = UDim2.new(1, 0, 0, 5)
+	accent.BackgroundColor3 = operation.Color
+	accent.BorderSizePixel = 0
+	accent.Parent = button
+	addCorner(accent, 3)
+
+	local title = addText(button, operation.Name, 22, CARD_TEXT, 1)
 	addText(button, operation.Place, 14, MUTED_TEXT, 2)
 	local requirement = addText(button, "", 14, CARD_TEXT, 3)
 	local summary = addText(button, operation.Summary, 14, CARD_TEXT, 4)
-	summary.Font = Enum.Font.Gotham
+	summary.Font = Enum.Font.BuilderSans
 
 	table.insert(cards, {
 		operation = operation,
 		button = button,
+		accent = accent,
+		title = title,
 		requirement = requirement,
 		stroke = stroke,
 	})
@@ -187,7 +201,8 @@ local function refreshCards()
 	for _, card in cards do
 		local operation = card.operation
 		local locked = rating < operation.RatingRequired
-		card.button.BackgroundColor3 = if locked then LOCKED_COLOR else operation.Color
+		card.accent.BackgroundColor3 = if locked then LOCKED_COLOR else operation.Color
+		card.title.TextColor3 = if locked then MUTED_TEXT else operation.Color:Lerp(CARD_TEXT, 0.35)
 		card.stroke.Enabled = current == operation
 		if current == operation then
 			card.requirement.Text = "Ты работаешь здесь"
@@ -231,7 +246,7 @@ local function showInstruction(operation: Operations.Operation)
 	for index, step in operation.Steps do
 		local line = addText(guideContent, `{index}. {step}`, 17, CARD_TEXT, index)
 		line.Size = UDim2.new(1, -10, 0, 0)
-		line.Font = Enum.Font.Gotham
+		line.Font = Enum.Font.BuilderSans
 	end
 	guideContent.CanvasPosition = Vector2.zero
 	menu.Visible = false

@@ -49,7 +49,7 @@ local function showReward(position: Vector3, amount: number)
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.fromScale(1, 1)
 	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBlack
+	label.Font = Enum.Font.BuilderSansExtraBold
 	label.TextScaled = true
 	label.TextColor3 = Color3.fromRGB(46, 204, 113)
 	label.TextStrokeTransparency = 0.3

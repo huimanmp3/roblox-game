@@ -55,7 +55,7 @@ local function show(text: string, kind: string)
 	label.AutomaticSize = Enum.AutomaticSize.Y
 	label.BackgroundColor3 = Color3.fromRGB(25, 20, 35)
 	label.BackgroundTransparency = 0.25
-	label.Font = Enum.Font.GothamBold
+	label.Font = Enum.Font.BuilderSansBold
 	label.TextSize = 20
 	label.TextWrapped = true
 	label.TextColor3 = TEXT_COLORS[kind] or TEXT_COLORS.info

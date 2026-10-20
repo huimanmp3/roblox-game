@@ -91,6 +91,23 @@ local function buildBarrier(model: Model, fenceX: number, fromZ: number, toZ: nu
 	Parts.tag(gate, "K2Gate")
 end
 
+-- Крыша и светодиодные лампы рядами под ней
+local function buildRoof(model: Model)
+	Parts.box(
+		"Roof",
+		Vector3.new(MIN_X - 1, F + HEIGHT, MIN_Z - 1),
+		Vector3.new(MAX_X + 1, F + HEIGHT + 1, MAX_Z + 1),
+		Color3.fromRGB(235, 236, 240),
+		Enum.Material.SmoothPlastic,
+		model
+	)
+	local lampY = F + HEIGHT - 8
+	local length = MAX_X - MIN_X - 20
+	for z = MIN_Z + 15, MAX_Z - 10, 25 do
+		Parts.ceilingLight(CFrame.new((MIN_X + MAX_X) / 2, lampY, z), length, 60, model)
+	end
+end
+
 local function buildBlockK2(model: Model)
 	local fenceX = -AISLE_HALF_WIDTH
 	local fenceTop = F + 10
@@ -106,6 +123,14 @@ local function buildBlockK2(model: Model)
 			model
 		)
 	end
+
+	-- Над ограждением и проходами до самой крыши — невидимая стена: перепрыгнуть в К2 нельзя
+	Parts.invisibleWall(
+		"K2FenceCap",
+		Vector3.new(fenceX - 1, F + 9, MIN_Z),
+		Vector3.new(fenceX, F + HEIGHT, MAX_Z),
+		model
+	)
 
 	-- Для тягачей стоек нет: только прозрачный барьер
 	buildBarrier(model, fenceX, GATE_MIN_Z, GATE_MAX_Z)
@@ -158,7 +183,8 @@ function Warehouse.build(parent: Instance)
 		model
 	)
 	buildWalls(model)
-	Parts.sign("СКЛАД", CFrame.new(0, F + 15, MIN_Z - 1.2), Vector3.new(20, 4, 0.3), Parts.BRAND, model)
+	buildRoof(model)
+	Parts.sign("СКЛАД", CFrame.new(0, F + 9.8, MIN_Z - 1.2), Vector3.new(16, 3.4, 0.3), Parts.BRAND, model)
 
 	-- Жёлтая разметка центрального прохода
 	for _, x in { -AISLE_HALF_WIDTH + 0.5, AISLE_HALF_WIDTH - 0.5 } do

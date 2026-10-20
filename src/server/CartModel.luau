@@ -81,7 +81,7 @@ local function addLabel(wall: BasePart, face: Enum.NormalId): TextLabel
 	label.Size = UDim2.fromScale(0.9, 0.6)
 	label.BackgroundTransparency = 1
 	label.TextScaled = true
-	label.Font = Enum.Font.GothamBlack
+	label.Font = Enum.Font.BuilderSansExtraBold
 	label.TextColor3 = Color3.new(1, 1, 1)
 	label.TextStrokeTransparency = 0.4
 	label.Parent = gui

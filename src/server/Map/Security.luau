@@ -1,6 +1,7 @@
 --!strict
--- Коридор с постом охраны между раздевалкой и складом.
--- Прозрачный барьер с тегом SecurityGate пропускает только игроков в форме.
+-- Коридор с постом охраны между раздевалкой и складом. Коридор под крышей, а стеклянный барьер
+-- поста — от пола до потолка, поэтому перепрыгнуть пост нельзя.
+-- Барьер с тегом SecurityGate пропускает только игроков в форме.
 
 local Parts = require(script.Parent.Parts)
 
@@ -9,6 +10,7 @@ local MIN_Z, MAX_Z = -135, -100
 local HALF_WIDTH = 12
 local GATE_Z = -117
 local BOOTH_EDGE_X = -5 -- будка охраны занимает коридор от западной стены до этой линии
+local CEILING = 12
 
 local FLOOR_COLOR = Color3.fromRGB(160, 160, 165)
 local WALL_COLOR = Color3.fromRGB(215, 215, 220)
@@ -83,10 +85,29 @@ function Security.build(parent: Instance)
 		}, model)
 	end
 
+	-- Потолок с лампами и невидимая стена над будкой: поверх поста не пройти
+	Parts.box(
+		"Roof",
+		Vector3.new(-HALF_WIDTH - 1, F + CEILING, MIN_Z),
+		Vector3.new(HALF_WIDTH + 1, F + CEILING + 1, MAX_Z),
+		Color3.fromRGB(235, 236, 240),
+		Enum.Material.SmoothPlastic,
+		model
+	)
+	for _, z in { MIN_Z + 8, MAX_Z - 8 } do
+		Parts.ceilingLight(CFrame.new(0, F + CEILING - 0.2, z), 14, 16, model)
+	end
+	Parts.invisibleWall(
+		"BoothCap",
+		Vector3.new(-HALF_WIDTH, F + 8, GATE_Z - 0.2),
+		Vector3.new(BOOTH_EDGE_X, F + CEILING, GATE_Z + 0.2),
+		model
+	)
+
 	local gate = Parts.part({
 		Name = "Gate",
-		Size = Vector3.new(HALF_WIDTH - BOOTH_EDGE_X, 9, 0.4),
-		CFrame = CFrame.new((HALF_WIDTH + BOOTH_EDGE_X) / 2, F + 4.5, GATE_Z),
+		Size = Vector3.new(HALF_WIDTH - BOOTH_EDGE_X, CEILING, 0.4),
+		CFrame = CFrame.new((HALF_WIDTH + BOOTH_EDGE_X) / 2, F + CEILING / 2, GATE_Z),
 		Color = Color3.fromRGB(255, 90, 90),
 		Material = Enum.Material.Glass,
 		Transparency = 0.75,

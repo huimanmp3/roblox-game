@@ -65,11 +65,11 @@ local function addLine(order: number, textSize: number, color: Color3, font: Enu
 end
 
 local MUTED = Color3.fromRGB(215, 200, 245)
-local rankLine = addLine(1, 18, Color3.fromRGB(230, 210, 255), Enum.Font.GothamBold)
-local ratingLine = addLine(2, 14, MUTED, Enum.Font.GothamMedium)
-local qualityLine = addLine(3, 14, MUTED, Enum.Font.GothamMedium)
-local moneyLine = addLine(4, 14, MUTED, Enum.Font.GothamMedium)
-local operationLine = addLine(5, 14, MUTED, Enum.Font.GothamMedium)
+local rankLine = addLine(1, 18, Color3.fromRGB(230, 210, 255), Enum.Font.BuilderSansBold)
+local ratingLine = addLine(2, 14, MUTED, Enum.Font.BuilderSansMedium)
+local qualityLine = addLine(3, 14, MUTED, Enum.Font.BuilderSansMedium)
+local moneyLine = addLine(4, 14, MUTED, Enum.Font.BuilderSansMedium)
+local operationLine = addLine(5, 14, MUTED, Enum.Font.BuilderSansMedium)
 
 local divider = Instance.new("Frame")
 divider.LayoutOrder = 6
@@ -78,9 +78,9 @@ divider.BackgroundColor3 = Color3.fromRGB(150, 120, 200)
 divider.BorderSizePixel = 0
 divider.Parent = panel
 
-local taskCaption = addLine(7, 12, Color3.fromRGB(241, 196, 15), Enum.Font.GothamBold)
+local taskCaption = addLine(7, 12, Color3.fromRGB(241, 196, 15), Enum.Font.BuilderSansBold)
 taskCaption.Text = "ЗАДАНИЕ"
-local taskLine = addLine(8, 16, Color3.new(1, 1, 1), Enum.Font.GothamBold)
+local taskLine = addLine(8, 16, Color3.new(1, 1, 1), Enum.Font.BuilderSansBold)
 
 local function updateStats()
 	local rank = player:GetAttribute("Rank")

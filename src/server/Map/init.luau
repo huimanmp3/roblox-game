@@ -3,12 +3,14 @@
 -- Игровая логика находит нужные детали по тегам (список в README), поэтому карту
 -- можно перенести в место и перестроить в Studio: скрипт её больше не тронет.
 
+local Environment = require(script.Environment)
 local Equipment = require(script.Equipment)
 local LockerRoom = require(script.LockerRoom)
 local Logistics = require(script.Logistics)
 local Mezzanine = require(script.Mezzanine)
 local Receiving = require(script.Receiving)
 local Security = require(script.Security)
+local Theme = require(script.Theme)
 local Warehouse = require(script.Warehouse)
 
 local Map = {}
@@ -28,6 +30,9 @@ function Map.build()
 	Mezzanine.build(map)
 	Logistics.build(map)
 	map.Parent = workspace
+
+	Theme.apply(map)
+	Environment.apply()
 end
 
 return Map

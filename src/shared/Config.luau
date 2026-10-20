@@ -21,10 +21,13 @@ export type ItemType = {
 	Look: ItemLook,
 }
 
+-- Icon: ID картинки-значка категории («rbxassetid://123»), рисуется на полу у буфера категории.
+-- Не задан — только надпись.
 export type Category = {
 	Id: string,
 	Name: string,
 	Color: Color3,
+	Icon: string?,
 	Items: { ItemType },
 }
 

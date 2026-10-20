@@ -59,6 +59,22 @@ local function buildWalls(model: Model)
 	)
 end
 
+-- Потолок с лампами: из раздевалки не выпрыгнуть
+local function buildCeiling(model: Model)
+	local top = F + WALL_HEIGHT
+	Parts.box(
+		"Roof",
+		Vector3.new(MIN_X - 1, top, MIN_Z - 1),
+		Vector3.new(MAX_X + 1, top + 1, MAX_Z + 1),
+		Color3.fromRGB(235, 236, 240),
+		Enum.Material.SmoothPlastic,
+		model
+	)
+	for _, z in { MIN_Z + 10, MIN_Z + 30 } do
+		Parts.ceilingLight(CFrame.new(0, top - 0.2, z), 30, 16, model)
+	end
+end
+
 local function buildLockers(model: Model)
 	for index = 0, 5 do
 		local z = MIN_Z + 6 + index * 5.5
@@ -116,6 +132,7 @@ function LockerRoom.build(parent: Instance)
 		model
 	)
 	buildWalls(model)
+	buildCeiling(model)
 	buildLockers(model)
 	buildSpawn(model)
 

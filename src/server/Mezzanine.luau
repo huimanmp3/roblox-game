@@ -41,7 +41,7 @@ local function decorate(cell: State.Cell)
 	label.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	label.BorderSizePixel = 0
 	label.TextScaled = true
-	label.Font = Enum.Font.GothamBold
+	label.Font = Enum.Font.BuilderSansBold
 	label.TextColor3 = Color3.new(1, 1, 1)
 	label.Text = `{cell.address}  {cell.item.Name}`
 	label.Parent = gui

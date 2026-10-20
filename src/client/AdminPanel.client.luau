@@ -36,7 +36,7 @@ end
 local function makeButton(parent: Instance, text: string, color: Color3?): TextButton
 	local button = Instance.new("TextButton")
 	button.BackgroundColor3 = color or BUTTON_COLOR
-	button.Font = Enum.Font.GothamBold
+	button.Font = Enum.Font.BuilderSansBold
 	button.TextSize = 14
 	button.TextColor3 = Color3.new(1, 1, 1)
 	button.TextWrapped = true
@@ -69,7 +69,7 @@ local title = Instance.new("TextLabel")
 title.Position = UDim2.fromOffset(12, 8)
 title.Size = UDim2.new(1, -60, 0, 28)
 title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamBold
+title.Font = Enum.Font.BuilderSansBold
 title.TextSize = 18
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.TextColor3 = Color3.new(1, 1, 1)
@@ -108,7 +108,7 @@ local function addSection(text: string)
 	label.LayoutOrder = nextOrder()
 	label.Size = UDim2.new(1, -8, 0, 22)
 	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBold
+	label.Font = Enum.Font.BuilderSansBold
 	label.TextSize = 15
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.TextColor3 = SECTION_COLOR
@@ -122,7 +122,7 @@ local function addInfo(): TextLabel
 	label.Size = UDim2.new(1, -8, 0, 0)
 	label.AutomaticSize = Enum.AutomaticSize.Y
 	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.Gotham
+	label.Font = Enum.Font.BuilderSans
 	label.TextSize = 14
 	label.TextWrapped = true
 	label.TextXAlignment = Enum.TextXAlignment.Left
@@ -161,7 +161,7 @@ local function rowBox(row: Frame, placeholder: string, width: number): TextBox
 	box.LayoutOrder = #row:GetChildren()
 	box.Size = UDim2.new(width, -4, 1, 0)
 	box.BackgroundColor3 = BOX_COLOR
-	box.Font = Enum.Font.Gotham
+	box.Font = Enum.Font.BuilderSans
 	box.TextSize = 14
 	box.TextColor3 = Color3.new(1, 1, 1)
 	box.PlaceholderText = placeholder

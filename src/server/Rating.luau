@@ -110,7 +110,7 @@ local function updateTag(player: Player, rankName: string)
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.fromScale(1, 1)
 		label.BackgroundTransparency = 1
-		label.Font = Enum.Font.GothamBold
+		label.Font = Enum.Font.BuilderSansBold
 		label.TextScaled = true
 		label.TextColor3 = Color3.fromRGB(220, 190, 255)
 		label.TextStrokeTransparency = 0.3
