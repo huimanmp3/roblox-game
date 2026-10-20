@@ -22,6 +22,9 @@
         },
         "Admin": {
           "$className": "RemoteEvent"
+        },
+        "Lift": {
+          "$className": "RemoteEvent"
         }
       }
     },

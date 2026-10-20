@@ -4,7 +4,9 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local CartModel = require(script.Parent.Parent.CartModel)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Npc = require(script.Parent.Parent.Npc)
 local Parts = require(script.Parent.Parts)
 
 local F = Parts.FLOOR
@@ -30,10 +32,50 @@ local DESK_COLOR = Color3.fromRGB(235, 235, 240)
 local DARK_COLOR = Color3.fromRGB(35, 35, 40)
 local SPOT_COLOR = Color3.fromRGB(241, 196, 15)
 local CART_COLOR = Color3.fromRGB(150, 155, 160)
+local STEEL_COLOR = Color3.fromRGB(62, 66, 76)
+local CARDBOARD_COLOR = Color3.fromRGB(196, 154, 108)
+local WOOD_COLOR = Color3.fromRGB(120, 84, 56)
 local WASTE_COLOR = Color3.fromRGB(150, 110, 70)
-local SKIN_COLOR = Color3.fromRGB(234, 184, 146)
 
 local Receiving = {}
+
+-- Экран монитора: тёмно-синий интерфейс с заголовком и строками, светится сам
+local function addScreen(monitor: BasePart, title: string)
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Front
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 80
+	gui.LightInfluence = 0
+	gui.Parent = monitor
+
+	local screen = Instance.new("Frame")
+	screen.AnchorPoint = Vector2.new(0.5, 0.5)
+	screen.Position = UDim2.fromScale(0.5, 0.5)
+	screen.Size = UDim2.fromScale(0.94, 0.9)
+	screen.BackgroundColor3 = Color3.fromRGB(18, 32, 58)
+	screen.BorderSizePixel = 0
+	screen.Parent = gui
+
+	local header = Instance.new("TextLabel")
+	header.Size = UDim2.fromScale(1, 0.2)
+	header.BackgroundColor3 = Parts.BRAND
+	header.BorderSizePixel = 0
+	header.Text = title
+	header.TextScaled = true
+	header.Font = Enum.Font.BuilderSansBold
+	header.TextColor3 = Color3.new(1, 1, 1)
+	header.Parent = screen
+
+	-- Строки «таблицы» приёмки разной длины
+	for row = 0, 4 do
+		local line = Instance.new("Frame")
+		line.Position = UDim2.fromScale(0.06, 0.3 + row * 0.13)
+		line.Size = UDim2.fromScale(0.3 + ((row * 37) % 50) / 100, 0.06)
+		line.BackgroundColor3 = if row == 0 then Color3.fromRGB(46, 204, 113) else Color3.fromRGB(110, 140, 190)
+		line.BorderSizePixel = 0
+		line.Parent = screen
+	end
+end
 
 -- Рабочий стол. Игрок стоит со стороны -Z, палет ставят справа (+X), проезд погрузчика — за столом (+Z),
 -- тележки — за спиной игрока.
@@ -44,10 +86,65 @@ local function buildTable(number: number, base: CFrame, parent: Instance)
 	Parts.tag(unit, "WorkTable")
 	unit.Parent = parent
 
+	-- Верстак: светлая столешница (деталь Desk, на ней подсказки стола) на стальных боковинах,
+	-- задняя стенка, полка снизу и резиновый коврик под ногами
 	Parts.part(
-		{ Name = "Desk", Size = Vector3.new(8, 3.5, 3.5), CFrame = base * CFrame.new(0, 1.75, 0), Color = DESK_COLOR },
+		{ Name = "Desk", Size = Vector3.new(8, 0.3, 3.5), CFrame = base * CFrame.new(0, 3.35, 0), Color = DESK_COLOR },
 		unit
 	)
+	Parts.part({
+		Name = "DeskEdge",
+		Size = Vector3.new(8.06, 0.1, 3.56),
+		CFrame = base * CFrame.new(0, 3.16, 0),
+		Color = STEEL_COLOR,
+		Material = Enum.Material.Metal,
+	}, unit)
+	for _, x in { -3.85, 3.85 } do
+		Parts.part({
+			Name = "DeskSide",
+			Size = Vector3.new(0.25, 3.1, 3.3),
+			CFrame = base * CFrame.new(x, 1.55, 0),
+			Color = STEEL_COLOR,
+			Material = Enum.Material.Metal,
+		}, unit)
+	end
+	Parts.part({
+		Name = "DeskBack",
+		Size = Vector3.new(7.45, 2.3, 0.15),
+		CFrame = base * CFrame.new(0, 1.95, 1.55),
+		Color = STEEL_COLOR,
+		Material = Enum.Material.Metal,
+	}, unit)
+	Parts.part({
+		Name = "DeskShelf",
+		Size = Vector3.new(7.45, 0.15, 3),
+		CFrame = base * CFrame.new(0, 0.8, 0.1),
+		Color = STEEL_COLOR,
+		Material = Enum.Material.Metal,
+	}, unit)
+	for index, x in { -2.2, -0.6 } do
+		Parts.part({
+			Name = "SpareBox",
+			Size = Vector3.new(1.4, 1 - index * 0.15, 1.6),
+			CFrame = base
+				* CFrame.new(x, 0.875 + (1 - index * 0.15) / 2, 0.2)
+				* CFrame.Angles(0, math.rad(index * 7), 0),
+			Color = CARDBOARD_COLOR,
+			Material = Enum.Material.Cardboard,
+			CanCollide = false,
+			CanQuery = false,
+		}, unit)
+	end
+	Parts.part({
+		Name = "Mat",
+		Size = Vector3.new(7, 0.06, 2.6),
+		CFrame = base * CFrame.new(0, 0.03, -3.2),
+		Color = Color3.fromRGB(40, 42, 48),
+		Material = Enum.Material.Rubber,
+		CanCollide = false,
+		CanQuery = false,
+	}, unit)
+
 	Parts.part({
 		Name = "BoxSpot",
 		Size = Vector3.new(2, 0.05, 2),
@@ -56,17 +153,41 @@ local function buildTable(number: number, base: CFrame, parent: Instance)
 		CanCollide = false,
 	}, unit)
 
+	-- Монитор приёмки с включённым экраном, клавиатура и подставка для ТСД
 	Parts.part({
-		Name = "MonitorStand",
-		Size = Vector3.new(0.3, 1, 0.3),
-		CFrame = base * CFrame.new(2.6, 4, 1.1),
+		Name = "MonitorFoot",
+		Size = Vector3.new(0.9, 0.08, 0.6),
+		CFrame = base * CFrame.new(2.6, 3.54, 1.1),
 		Color = DARK_COLOR,
+		Material = Enum.Material.Metal,
 	}, unit)
 	Parts.part({
+		Name = "MonitorStand",
+		Size = Vector3.new(0.2, 1, 0.2),
+		CFrame = base * CFrame.new(2.6, 4, 1.15),
+		Color = DARK_COLOR,
+	}, unit)
+	local monitor = Parts.part({
 		Name = "Monitor",
-		Size = Vector3.new(2.4, 1.5, 0.15),
+		Size = Vector3.new(2.4, 1.5, 0.12),
 		CFrame = base * CFrame.new(2.6, 5.1, 1.1),
 		Color = DARK_COLOR,
+	}, unit)
+	addScreen(monitor, `ПРИЁМКА · СТОЛ №{number}`)
+	Parts.part({
+		Name = "Keyboard",
+		Size = Vector3.new(1.7, 0.08, 0.55),
+		CFrame = base * CFrame.new(2.6, 3.54, -0.4),
+		Color = DARK_COLOR,
+		CanQuery = false,
+	}, unit)
+	Parts.part({
+		Name = "ScannerDock",
+		Size = Vector3.new(0.6, 0.35, 0.5),
+		CFrame = base * CFrame.new(-3.3, 3.67, 1.1),
+		Color = DARK_COLOR,
+		Material = Enum.Material.Metal,
+		CanQuery = false,
 	}, unit)
 
 	-- Номер стола на стойке, виден издалека
@@ -133,40 +254,45 @@ local function buildSeniorDesk(parent: Instance)
 		parent
 	)
 
-	-- Старший смены за столом (просто фигура из блоков)
+	-- Стойка: деревянная столешница, фирменная полоса спереди, монитор для старшего
 	Parts.part({
-		Name = "SeniorLegs",
-		Size = Vector3.new(1.6, 2.4, 0.8),
-		CFrame = CFrame.new(25, F + 1.2, -77.6),
-		Color = Config.Uniform.BottomColor,
+		Name = "CounterTop",
+		Size = Vector3.new(10.4, 0.25, 3.9),
+		CFrame = CFrame.new(25, F + 3.62, -80),
+		Color = WOOD_COLOR,
+		Material = Enum.Material.Wood,
 	}, parent)
 	Parts.part({
-		Name = "SeniorBody",
-		Size = Vector3.new(2, 2, 1),
-		CFrame = CFrame.new(25, F + 3.4, -77.6),
-		Color = Config.Uniform.TopColor,
+		Name = "CounterStripe",
+		Size = Vector3.new(10, 0.4, 0.06),
+		CFrame = CFrame.new(25, F + 2.6, -81.78),
+		Color = Parts.BRAND,
+		CanCollide = false,
+		CanQuery = false,
 	}, parent)
+	local monitor = Parts.part({
+		Name = "Monitor",
+		Size = Vector3.new(2.2, 1.4, 0.12),
+		CFrame = CFrame.new(27.5, F + 4.7, -79.4) * CFrame.Angles(0, math.pi, 0),
+		Color = DARK_COLOR,
+	}, parent)
+	addScreen(monitor, "РАСПРЕДЕЛЕНИЕ СТОЛОВ")
 	Parts.part({
-		Name = "SeniorHead",
-		Size = Vector3.new(1.2, 1.2, 1.2),
-		CFrame = CFrame.new(25, F + 5, -77.6),
-		Color = SKIN_COLOR,
+		Name = "MonitorStand",
+		Size = Vector3.new(0.2, 0.9, 0.2),
+		CFrame = CFrame.new(27.5, F + 4.1, -79.35),
+		Color = DARK_COLOR,
 	}, parent)
+
+	-- Старший смены стоит за стойкой лицом к входу
+	Npc.stand(CFrame.new(25, F, -77.6), parent)
 end
 
--- Пустая тара для вида: корпус на тёмном основании с колёсами
+-- Пустая тара для вида (та же модель, что и у настоящих тар)
 local function buildDecorCart(base: CFrame, parent: Instance)
-	Parts.part(
-		{ Name = "CartBase", Size = Vector3.new(3, 0.8, 5), CFrame = base * CFrame.new(0, 0.4, 0), Color = DARK_COLOR },
-		parent
-	)
-	Parts.part({
-		Name = "Cart",
-		Size = Vector3.new(3, 3.4, 5),
-		CFrame = base * CFrame.new(0, 2.5, 0),
-		Color = CART_COLOR,
-		Material = Enum.Material.Metal,
-	}, parent)
+	local cart = CartModel.create()
+	cart.model:PivotTo(base)
+	cart.model.Parent = parent
 end
 
 -- Начало ряда: место общей тары для картона (саму тару ставит Carts при запуске)

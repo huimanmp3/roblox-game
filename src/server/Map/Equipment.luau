@@ -3,9 +3,7 @@
 -- Внутри стеллаж с ТСД на зарядке, стол с компьютером и сотрудник, который выдаёт ТСД.
 -- Стол помечен тегом EquipmentDesk: на нём подсказка «Получить ТСД».
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Config = require(ReplicatedStorage.Shared.Config)
+local Npc = require(script.Parent.Parent.Npc)
 local Parts = require(script.Parent.Parts)
 
 local F = Parts.FLOOR
@@ -23,7 +21,6 @@ local DESK_COLOR = Color3.fromRGB(235, 235, 240)
 local DARK_COLOR = Color3.fromRGB(35, 35, 40)
 local RACK_COLOR = Color3.fromRGB(40, 60, 120)
 local CHAIR_COLOR = Color3.fromRGB(60, 60, 70)
-local SKIN_COLOR = Color3.fromRGB(234, 184, 146)
 
 local Equipment = {}
 
@@ -120,38 +117,36 @@ local function buildDesk(model: Model)
 		Color = DARK_COLOR,
 	}, model)
 
-	-- Стул и сотрудник выдачи: сидит лицом к двери
+	-- Офисное кресло и сотрудник выдачи: сидит лицом к двери (по +Z)
 	local seatZ = deskZ - 2.6
 	Parts.part({
-		Name = "ChairSeat",
-		Size = Vector3.new(2, 0.4, 2),
-		CFrame = CFrame.new(CENTER_X, F + 1.8, seatZ),
-		Color = CHAIR_COLOR,
+		Name = "ChairBase",
+		Size = Vector3.new(1.6, 0.2, 1.6),
+		CFrame = CFrame.new(CENTER_X, F + 0.1, seatZ),
+		Color = DARK_COLOR,
+		Material = Enum.Material.Metal,
+	}, model)
+	Parts.part({
+		Name = "ChairStem",
+		Size = Vector3.new(0.25, 1.4, 0.25),
+		CFrame = CFrame.new(CENTER_X, F + 0.9, seatZ),
+		Color = DARK_COLOR,
+		Material = Enum.Material.Metal,
 	}, model)
 	Parts.part({
 		Name = "ChairBack",
 		Size = Vector3.new(2, 2.4, 0.3),
 		CFrame = CFrame.new(CENTER_X, F + 3.2, seatZ - 1.1),
 		Color = CHAIR_COLOR,
+		Material = Enum.Material.Fabric,
 	}, model)
-	Parts.part({
-		Name = "WorkerLegs",
-		Size = Vector3.new(1.8, 0.6, 1.8),
-		CFrame = CFrame.new(CENTER_X, F + 2.3, seatZ + 0.6),
-		Color = Config.Uniform.BottomColor,
-	}, model)
-	Parts.part({
-		Name = "WorkerBody",
-		Size = Vector3.new(2, 2, 1),
-		CFrame = CFrame.new(CENTER_X, F + 3.6, seatZ - 0.3),
-		Color = Config.Uniform.TopColor,
-	}, model)
-	Parts.part({
-		Name = "WorkerHead",
-		Size = Vector3.new(1.2, 1.2, 1.2),
-		CFrame = CFrame.new(CENTER_X, F + 5.2, seatZ - 0.3),
-		Color = SKIN_COLOR,
-	}, model)
+	local seat = Npc.seat(
+		Vector3.new(2, 0.4, 2),
+		CFrame.new(CENTER_X, F + 1.8, seatZ) * CFrame.Angles(0, math.pi, 0),
+		CHAIR_COLOR,
+		model
+	)
+	Npc.sit(seat, model)
 end
 
 function Equipment.build(parent: Instance)

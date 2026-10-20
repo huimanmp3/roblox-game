@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Npc = require(script.Parent.Npc)
 local Pallets = require(script.Parent.Pallets)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
@@ -21,8 +22,6 @@ local PALLET_ON_FORKS = CFrame.new(0, CARRY_LIFT, -FORK_DISTANCE)
 local BODY_COLOR = Color3.fromRGB(243, 156, 18)
 local DARK_COLOR = Color3.fromRGB(45, 45, 50)
 local METAL_COLOR = Color3.fromRGB(150, 150, 155)
-local SKIN_COLOR = Color3.fromRGB(234, 184, 146)
-local HELMET_COLOR = Color3.fromRGB(241, 196, 15)
 
 local Forklift = {}
 
@@ -55,7 +54,6 @@ local function buildForklift(): Model
 
 	addPart(model, "Body", Vector3.new(3.2, 2.2, 4), CFrame.new(0, 1.6, 0.5), BODY_COLOR)
 	addPart(model, "Counterweight", Vector3.new(3.2, 1.4, 1), CFrame.new(0, 1.5, 3), DARK_COLOR)
-	addPart(model, "Seat", Vector3.new(1.4, 0.4, 1.2), CFrame.new(0, 2.9, 1.1), DARK_COLOR)
 	addPart(model, "Roof", Vector3.new(3.4, 0.2, 3.2), CFrame.new(0, 6.6, 0.5), DARK_COLOR)
 	for _, x in { -1.5, 1.5 } do
 		for _, z in { -0.9, 1.9 } do
@@ -63,10 +61,25 @@ local function buildForklift(): Model
 		end
 	end
 
-	-- Водитель-грузчик в форме и каске
-	addPart(model, "Driver", Vector3.new(1.4, 1.6, 0.8), CFrame.new(0, 3.9, 1.1), Config.Uniform.TopColor)
-	addPart(model, "Head", Vector3.new(1.1, 1.1, 1.1), CFrame.new(0, 5.25, 1.1), SKIN_COLOR)
-	addPart(model, "Helmet", Vector3.new(1.3, 0.4, 1.3), CFrame.new(0, 5.95, 1.1), HELMET_COLOR)
+	-- Водитель-грузчик: настоящий NPC в форме, сидит за рулём
+	addPart(model, "SeatBack", Vector3.new(1.4, 1.4, 0.25), CFrame.new(0, 3.6, 1.75), DARK_COLOR)
+	addPart(
+		model,
+		"SteeringColumn",
+		Vector3.new(0.2, 1.4, 0.2),
+		CFrame.new(0, 3.3, -0.6) * CFrame.Angles(math.rad(-25), 0, 0),
+		DARK_COLOR
+	)
+	local steering = addPart(
+		model,
+		"SteeringWheel",
+		Vector3.new(0.15, 1, 1),
+		CFrame.new(0, 4, -0.35) * CFrame.Angles(math.rad(-25), math.rad(90), 0),
+		DARK_COLOR
+	)
+	steering.Shape = Enum.PartType.Cylinder
+	local seat = Npc.seat(Vector3.new(1.4, 0.4, 1.2), CFrame.new(0, 2.9, 1.1), DARK_COLOR, model)
+	Npc.sit(seat, model)
 
 	for _, x in { -1, 1 } do
 		addPart(model, "Mast", Vector3.new(0.3, 5, 0.3), CFrame.new(x, 2.6, -1.7), DARK_COLOR)
