@@ -147,6 +147,7 @@ local function setupTable(model: Model)
 	local palletSpot = findPart(model, "PalletSpot")
 	local boxSpot = findPart(model, "BoxSpot")
 	local boardPart = findPart(model, "Board")
+	local monitor = findPart(model, "Monitor")
 	local cartSpots = findCartSpots(model)
 	if typeof(number) ~= "number" or not desk or not palletSpot or not boxSpot or #cartSpots == 0 then
 		warn(
@@ -173,6 +174,7 @@ local function setupTable(model: Model)
 		carts = {},
 		cardboardSpot = nearestCardboardSpot(desk.Position),
 		board = if boardPart then Boards.create(boardPart) else nil,
+		monitor = monitor,
 		picks = 0,
 		earned = 0,
 		palletOnTheWay = false,

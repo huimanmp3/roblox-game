@@ -119,6 +119,7 @@ export type WorkTable = {
 	carts: { [number]: Cart }, -- тележки у стола по номеру места
 	cardboardSpot: BasePart?, -- место общей тары для картона в начале ряда
 	board: Board?, -- табло со средним пиком
+	monitor: BasePart?, -- монитор на столе: на нём статистика стола (TableScreens)
 	picks: number, -- сколько пиков сделал хозяин стола
 	earned: number, -- сколько он за них заработал, в копейках
 	palletOnTheWay: boolean,

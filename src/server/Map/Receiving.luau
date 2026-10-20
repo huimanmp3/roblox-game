@@ -167,13 +167,13 @@ local function buildTable(number: number, base: CFrame, parent: Instance)
 		CFrame = base * CFrame.new(2.6, 4, 1.15),
 		Color = DARK_COLOR,
 	}, unit)
-	local monitor = Parts.part({
+	-- Экран со статистикой стола рисует TableScreens (коробка, палет, тары, итог смены)
+	Parts.part({
 		Name = "Monitor",
 		Size = Vector3.new(2.4, 1.5, 0.12),
 		CFrame = base * CFrame.new(2.6, 5.1, 1.1),
 		Color = DARK_COLOR,
 	}, unit)
-	addScreen(monitor, `ПРИЁМКА · СТОЛ №{number}`)
 	Parts.part({
 		Name = "Keyboard",
 		Size = Vector3.new(1.7, 0.08, 0.55),
