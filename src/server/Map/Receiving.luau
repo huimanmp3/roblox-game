@@ -53,22 +53,6 @@ local function buildTable(number: number, base: CFrame, parent: Instance)
 		CanCollide = false,
 	}, unit)
 
-	-- Сканер лежит на столе, его берут клавишей F
-	Parts.part({
-		Name = "Scanner",
-		Size = Vector3.new(0.5, 0.4, 1.2),
-		CFrame = base * CFrame.new(1.2, 3.7, -0.6),
-		Color = DARK_COLOR,
-	}, unit)
-	Parts.part({
-		Name = "ScannerLens",
-		Size = Vector3.new(0.35, 0.25, 0.05),
-		CFrame = base * CFrame.new(1.2, 3.7, -1.225),
-		Color = Color3.fromRGB(255, 40, 40),
-		Material = Enum.Material.Neon,
-		CanCollide = false,
-	}, unit)
-
 	Parts.part({
 		Name = "MonitorStand",
 		Size = Vector3.new(0.3, 1, 0.3),
@@ -90,6 +74,21 @@ local function buildTable(number: number, base: CFrame, parent: Instance)
 		Color = DARK_COLOR,
 	}, unit)
 	Parts.sign(`№{number}`, base * CFrame.new(0, 8.5, 1.6), Vector3.new(3.4, 2, 0.2), Parts.BRAND, unit)
+
+	-- Табло со средним пиком, видно с места игрока
+	Parts.part({
+		Name = "BoardPole",
+		Size = Vector3.new(0.2, 5, 0.2),
+		CFrame = base * CFrame.new(-4.2, 6, 1.6),
+		Color = DARK_COLOR,
+	}, unit)
+	Parts.part({
+		Name = "Board",
+		Size = Vector3.new(4, 2.2, 0.2),
+		CFrame = base * CFrame.new(-4.2, 7.6, 1.6),
+		Color = DARK_COLOR,
+		CanQuery = false,
+	}, unit)
 
 	Parts.part({
 		Name = "PalletSpot",

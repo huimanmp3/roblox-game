@@ -6,6 +6,7 @@
 local CollectionService = game:GetService("CollectionService")
 
 local Pallets = require(script.Parent.Pallets)
+local Pricing = require(script.Parent.Pricing)
 local State = require(script.Parent.State)
 
 local Tasks = {}
@@ -74,7 +75,7 @@ local function describeHands(session: State.Session, workTable: State.WorkTable)
 
 	local held = session.held
 	if held then
-		return `В руке: {held.item.Name} («{held.category.Name}»). Кликни сканером по тележке для этой категории или по коробке, чтобы вернуть товар`,
+		return `В руке: {held.item.Name} («{held.category.Name}»). Кликни ТСД по тележке для этой категории или по коробке, чтобы вернуть товар`,
 			desk,
 			tableLabel
 	end
@@ -90,9 +91,15 @@ local function describe(player: Player, session: State.Session): (string, BasePa
 			""
 	end
 
+	if not State.hasScanner(player) then
+		return "Пройди пост охраны и получи ТСД в зоне выдачи оборудования (удерживай E у компьютера)",
+			firstTagged("EquipmentDesk"),
+			"Выдача ТСД"
+	end
+
 	local workTable = session.workTable
 	if not workTable then
-		return "Пройди пост охраны и получи стол у старших в блоке К4",
+		return "Получи стол у старших в блоке К4",
 			firstTagged("SeniorDesk"),
 			"Стол старших"
 	end
@@ -110,11 +117,6 @@ local function describe(player: Player, session: State.Session): (string, BasePa
 
 	-- Дальше вся работа идёт за столом: стрелка ведёт к нему, а у самого стола клиент её прячет
 	local box = workTable.box
-	local pallet = workTable.pallet
-	if (box or pallet) and not State.hasScanner(player) then
-		return `Возьми сканер со стола №{workTable.number} (клавиша F)`, desk, tableLabel
-	end
-
 	if box then
 		if not box.opened then
 			return "Вскрой коробку на столе: удерживай E", desk, tableLabel
@@ -127,25 +129,25 @@ local function describe(player: Player, session: State.Session): (string, BasePa
 				nearestTagged("CartParking", desk.Position),
 				"Тележки"
 		end
-		return `Кликай сканером по коробке: достань товар и положи его в тележку. В коробке: {box.itemsLeft} шт.`,
-			desk,
-			tableLabel
+		local price = string.format("%.2f", Pricing.price(box.item) / 100)
+		local text =
+			`Кликай ТСД по коробке: достань товар и положи его в тележку. В коробке: {box.itemsLeft} шт., пик {price} ₽`
+		return text, desk, tableLabel
 	end
 
+	local pallet = workTable.pallet
 	if not pallet then
 		return "Жди палет: грузчик уже едет. Полные тележки пока можно отвезти на буфер",
 			desk,
 			tableLabel
 	end
 	if not pallet.scanned then
-		return "Возьми сканер в руку и кликни по QR-коду на палете",
-			desk,
-			tableLabel
+		return "Возьми ТСД в руку и кликни по QR-коду на палете", desk, tableLabel
 	end
 	local left = Pallets.itemsLeft(pallet)
-	return `Кликни сканером по верхней коробке на палете, чтобы поставить её на стол. На палете: {left} шт.`,
-		desk,
-		tableLabel
+	local text =
+		`Кликни ТСД по верхней коробке на палете, чтобы поставить её на стол. На палете: {left} шт.`
+	return text, desk, tableLabel
 end
 
 -- Подсказки на столе, коробке и тележках зависят от того, что сейчас в руках у хозяина стола

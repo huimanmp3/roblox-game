@@ -168,7 +168,7 @@ function Warehouse.build(parent: Instance)
 	buildBlockK2(model)
 	Parts.sign(
 		"БЛОК К4 · ПРИЁМКА",
-		CFrame.new(45, F + 16, -90),
+		CFrame.new(45, F + 16, -74),
 		Vector3.new(40, 5, 0.3),
 		Parts.BRAND,
 		model

@@ -1,7 +1,9 @@
 --!strict
--- Сканер: выдача инструмента и клики им. Что делает клик, зависит от того, куда кликнули:
--- QR-код палета, коробка на палете, коробка на столе или тележка у стола.
+-- ТСД (терминал сбора данных): выдача в зоне выдачи оборудования и клики им.
+-- Что делает клик, зависит от того, куда кликнули: QR-код палета, коробка на палете,
+-- коробка на столе или тележка у стола.
 
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Boxes = require(script.Parent.Boxes)
@@ -15,14 +17,15 @@ local notify = require(script.Parent.Notify)
 
 local scanEvent = ReplicatedStorage.Remotes.Scan
 
-local SCAN_DISTANCE = 20 -- как далеко от своего стола можно кликать сканером
+local SCAN_DISTANCE = 20 -- как далеко от своего стола можно кликать ТСД
+local DESK_DISTANCE = 10 -- как близко подойти к столу выдачи оборудования
 local EMPTY_PALLET_LIFETIME = 2 -- сколько секунд пустой поддон стоит у стола
 
 local Scanning = {}
 
 local function createScannerTool(): Tool
 	local tool = Instance.new("Tool")
-	tool.Name = "Сканер"
+	tool.Name = "ТСД"
 	tool.ToolTip = "Кликай по QR-коду палета, по коробкам и тележкам"
 	tool.CanBeDropped = false
 	tool:SetAttribute("Scanner", true)
@@ -54,9 +57,13 @@ local function createScannerTool(): Tool
 	return tool
 end
 
-function Scanning.giveScanner(player: Player)
+local function giveScanner(player: Player)
+	if not State.session(player).uniform then
+		notify(player, "Сначала переоденься в форму", "error")
+		return
+	end
 	if State.hasScanner(player) then
-		notify(player, "Сканер уже у тебя: он внизу экрана", "info")
+		notify(player, "ТСД уже у тебя: он внизу экрана", "info")
 		return
 	end
 	local backpack = player:FindFirstChildOfClass("Backpack")
@@ -75,7 +82,7 @@ function Scanning.giveScanner(player: Player)
 
 	notify(
 		player,
-		"Сканер в руке. Кликай им по палету, коробкам и тележкам",
+		"ТСД выдан и уже в руке. Кликай им по палету, коробкам и тележкам",
 		"success"
 	)
 	Tasks.refresh(player)
@@ -187,6 +194,24 @@ end
 
 function Scanning.start()
 	scanEvent.OnServerEvent:Connect(onScan)
+
+	-- Стол выдачи оборудования: ТСД выдаёт сотрудник за компьютером
+	for _, desk in CollectionService:GetTagged("EquipmentDesk") do
+		if desk:IsA("BasePart") then
+			local prompt = Instance.new("ProximityPrompt")
+			prompt.ActionText = "Получить ТСД"
+			prompt.ObjectText = "Выдача оборудования"
+			prompt.HoldDuration = 1
+			prompt.MaxActivationDistance = DESK_DISTANCE
+			prompt.RequiresLineOfSight = false
+			prompt.Parent = desk
+			prompt.Triggered:Connect(function(player)
+				if State.isNear(player, desk, DESK_DISTANCE) then
+					giveScanner(player)
+				end
+			end)
+		end
+	end
 end
 
 return Scanning

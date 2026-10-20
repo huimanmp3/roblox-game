@@ -3,6 +3,7 @@
 -- Игровая логика находит нужные детали по тегам (список в README), поэтому карту
 -- можно перенести в место и перестроить в Studio: скрипт её больше не тронет.
 
+local Equipment = require(script.Equipment)
 local LockerRoom = require(script.LockerRoom)
 local Receiving = require(script.Receiving)
 local Security = require(script.Security)
@@ -21,6 +22,7 @@ function Map.build()
 	Security.build(map)
 	Warehouse.build(map)
 	Receiving.build(map)
+	Equipment.build(map)
 	map.Parent = workspace
 end
 

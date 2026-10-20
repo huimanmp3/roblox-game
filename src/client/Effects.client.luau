@@ -1,5 +1,5 @@
 --!strict
--- Эффекты приёмки: товар летит из коробки в тару, над тарой всплывает награда.
+-- Эффекты приёмки: товар летит в тележку, над ней всплывает цена пика.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -53,7 +53,7 @@ local function showReward(position: Vector3, amount: number)
 	label.TextScaled = true
 	label.TextColor3 = Color3.fromRGB(46, 204, 113)
 	label.TextStrokeTransparency = 0.3
-	label.Text = `+{amount} ₽`
+	label.Text = string.format("+%.2f ₽", amount)
 	label.Parent = billboard
 
 	local info = TweenInfo.new(REWARD_TIME)

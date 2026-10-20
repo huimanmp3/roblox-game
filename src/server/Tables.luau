@@ -1,14 +1,14 @@
 --!strict
--- Рабочие столы приёмки: выдача стола у старших, занятие стола, сканер на столе,
+-- Рабочие столы приёмки: выдача стола у старших, занятие стола, табло со средним пиком,
 -- а также что происходит с вещами игрока, когда он умирает или уходит.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 
+local Boards = require(script.Parent.Boards)
 local Boxes = require(script.Parent.Boxes)
 local Carts = require(script.Parent.Carts)
 local Forklift = require(script.Parent.Forklift)
-local Scanning = require(script.Parent.Scanning)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
 local notify = require(script.Parent.Notify)
@@ -68,7 +68,10 @@ local function assignTable(player: Player)
 			workTable.owner = player
 			workTable.occupied = false
 			workTable.delivery += 1
+			workTable.picks = 0
+			workTable.earned = 0
 			session.workTable = workTable
+			Boards.refresh(workTable)
 			notify(
 				player,
 				`Твой стол — №{workTable.number}. Иди по стрелке и займи его`,
@@ -114,26 +117,16 @@ local function onDeskPrompt(player: Player, workTable: State.WorkTable)
 	Carts.park(player, workTable)
 end
 
-local function onScannerPrompt(player: Player, workTable: State.WorkTable)
-	if workTable.owner ~= player or not workTable.occupied then
-		notify(player, "Сканер можно взять только на своём столе", "error")
-		return
-	end
-	if State.isNear(player, workTable.desk, INTERACT_DISTANCE) then
-		Scanning.giveScanner(player)
-	end
-end
-
 local function setupTable(model: Model)
 	local number = model:GetAttribute("Number")
 	local desk = findPart(model, "Desk")
 	local palletSpot = findPart(model, "PalletSpot")
 	local boxSpot = findPart(model, "BoxSpot")
-	local scanner = findPart(model, "Scanner")
+	local boardPart = findPart(model, "Board")
 	local cartSpots = findCartSpots(model)
-	if typeof(number) ~= "number" or not desk or not palletSpot or not boxSpot or not scanner or #cartSpots == 0 then
+	if typeof(number) ~= "number" or not desk or not palletSpot or not boxSpot or #cartSpots == 0 then
 		warn(
-			`Стол {model:GetFullName()} собран неправильно: нужны атрибут Number и детали Desk, PalletSpot, BoxSpot, Scanner, CartSpot`
+			`Стол {model:GetFullName()} собран неправильно: нужны атрибут Number и детали Desk, PalletSpot, BoxSpot, CartSpot`
 		)
 		return
 	end
@@ -154,6 +147,9 @@ local function setupTable(model: Model)
 		pallet = nil,
 		box = nil,
 		carts = {},
+		board = if boardPart then Boards.create(boardPart) else nil,
+		picks = 0,
+		earned = 0,
 		palletOnTheWay = false,
 		delivery = 0,
 	}
@@ -161,14 +157,6 @@ local function setupTable(model: Model)
 
 	deskPrompt.Triggered:Connect(function(player)
 		onDeskPrompt(player, workTable)
-	end)
-
-	-- У сканера своя клавиша, чтобы подсказки на столе не перекрывали друг друга
-	local scannerPrompt = makePrompt(scanner, "Взять сканер", "Сканер")
-	scannerPrompt.KeyboardKeyCode = Enum.KeyCode.F
-	scannerPrompt.GamepadKeyCode = Enum.KeyCode.ButtonY
-	scannerPrompt.Triggered:Connect(function(player)
-		onScannerPrompt(player, workTable)
 	end)
 end
 
@@ -193,6 +181,7 @@ local function release(player: Player)
 		Boxes.cleanupTable(workTable)
 		Carts.cleanupTable(workTable)
 		Tasks.updatePrompts(workTable)
+		Boards.refresh(workTable)
 	end
 
 	State.sessions[player] = nil

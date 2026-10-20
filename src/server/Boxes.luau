@@ -3,12 +3,12 @@
 -- и отнести картон в контейнер «КАРТОН» в начале ряда.
 
 local CollectionService = game:GetService("CollectionService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local Carry = require(script.Parent.Carry)
-local Config = require(ReplicatedStorage.Shared.Config)
+local Items = require(script.Parent.Items)
 local Pallets = require(script.Parent.Pallets)
+local Pricing = require(script.Parent.Pricing)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
 local notify = require(script.Parent.Notify)
@@ -24,7 +24,8 @@ local INSIDE_COLOR = Color3.fromRGB(90, 65, 40)
 local Boxes = {}
 
 local function updateLabels(box: State.Box)
-	local text = if box.opened then `{box.item.Name}: {box.itemsLeft} шт.` else box.item.Name
+	local price = string.format("%.2f", Pricing.price(box.item) / 100)
+	local text = if box.opened then `{box.item.Name}: {box.itemsLeft} шт. · {price} ₽/пик` else box.item.Name
 	for _, gui in box.part:GetChildren() do
 		local label = if gui:IsA("SurfaceGui") then gui:FindFirstChildOfClass("TextLabel") else nil
 		if label then
@@ -153,7 +154,7 @@ function Boxes.placeOnDesk(workTable: State.WorkTable, box: State.Box)
 	workTable.box = box
 end
 
--- Клик сканером по коробке на столе: достать товар (он сразу пикается) или вернуть его обратно
+-- Клик ТСД по коробке на столе: достать товар (он сразу пикается) или вернуть его обратно
 function Boxes.click(player: Player, workTable: State.WorkTable)
 	local box = workTable.box
 	if not box then
@@ -204,15 +205,9 @@ function Boxes.click(player: Player, workTable: State.WorkTable)
 		return
 	end
 
-	local size = Config.ItemSizes[box.item.Size]
-	local itemPart = Instance.new("Part")
-	itemPart.Name = "Item"
-	itemPart.Size = Vector3.one * (if size then size.Scale else 0.8)
-	itemPart.Color = box.category.Color
-	itemPart.Material = Enum.Material.SmoothPlastic
+	local itemPart = Items.create(box.item)
 	itemPart.CanQuery = false
-	itemPart.CanTouch = false
-	if not Carry.attach(itemPart, character, HELD_OFFSET) then
+	if not Carry.attach(itemPart, character, HELD_OFFSET * Items.uprightRotation(box.item)) then
 		itemPart:Destroy()
 		return
 	end

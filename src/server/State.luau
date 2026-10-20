@@ -31,19 +31,25 @@ export type Pallet = {
 
 export type Cart = {
 	model: Model,
-	body: BasePart,
+	body: BasePart, -- дно тележки, к нему приварено всё остальное
 	prompt: ProximityPrompt,
 	labels: { TextLabel },
-	bar: Frame,
 	category: Category?, -- категория первого положенного товара
 	count: number,
-	wrong: number, -- сколько товара не той категории: за него штрафуют на буфере
+	visible: number, -- сколько фигурок товара видно внутри
+	-- Цены пиков товара не той категории (в копейках): за него могут оштрафовать на буфере
+	wrongPrices: { number },
 }
 
 export type HeldItem = {
 	item: ItemType,
 	category: Category,
 	part: BasePart,
+}
+
+export type Board = {
+	average: TextLabel,
+	personal: TextLabel,
 }
 
 export type WorkTable = {
@@ -59,6 +65,9 @@ export type WorkTable = {
 	pallet: Pallet?,
 	box: Box?, -- коробка на столе
 	carts: { [number]: Cart }, -- тележки у стола по номеру места
+	board: Board?, -- табло со средним пиком
+	picks: number, -- сколько пиков сделал хозяин стола
+	earned: number, -- сколько он за них заработал, в копейках
 	palletOnTheWay: boolean,
 	-- Растёт каждый раз, когда стол выдают или освобождают.
 	-- По нему погрузчик понимает, что палет уже не нужен.
@@ -160,7 +169,7 @@ local function containsScanner(container: Instance?): boolean
 	return false
 end
 
--- Сканер может быть в руке (в персонаже) или в рюкзаке
+-- ТСД может быть в руке (в персонаже) или в рюкзаке
 function State.hasScanner(player: Player): boolean
 	return containsScanner(player.Character) or containsScanner(player:FindFirstChildOfClass("Backpack"))
 end

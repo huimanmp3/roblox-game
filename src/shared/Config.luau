@@ -1,9 +1,22 @@
 --!strict
 -- Общие настройки игры. Доступны и серверу, и клиенту.
 
+-- Как товар выглядит в руке и в тележке.
+-- Shape: "Block" — коробочка, "Cylinder" — стоячая бутылка, "Roll" — лежачий рулон, "Ball" — шар.
+-- Dims: ширина, высота, глубина (у цилиндра — диаметр, высота, диаметр; у рулона — длина, диаметр, диаметр).
+-- Image: ID картинки товара из Roblox («rbxassetid://123»). Пусто — только фигура и цвет.
+export type ItemLook = {
+	Shape: string,
+	Dims: Vector3,
+	Color: Color3,
+	Image: string,
+}
+
 export type ItemType = {
 	Name: string,
-	Size: string, -- габариты: "S", "M" или "L" (см. ItemSizes ниже)
+	Size: string, -- габариты: "S", "M" или "L", от них зависит, сколько штук в коробке
+	Price: number, -- базовая цена пика в рублях
+	Look: ItemLook,
 }
 
 export type Category = {
@@ -13,6 +26,11 @@ export type Category = {
 	Items: { ItemType },
 }
 
+-- image — необязательный ID картинки: look("Block", ..., цвет, "rbxassetid://123")
+local function look(shape: string, dims: Vector3, color: Color3, image: string?): ItemLook
+	return { Shape = shape, Dims = dims, Color = color, Image = image or "" }
+end
+
 -- Категории товара. На буфере для каждой есть своя зона.
 local categories: { Category } = {
 	{
@@ -20,9 +38,24 @@ local categories: { Category } = {
 		Name = "Химия",
 		Color = Color3.fromRGB(52, 152, 219),
 		Items = {
-			{ Name = "Губки для посуды", Size = "S" },
-			{ Name = "Средство для посуды", Size = "M" },
-			{ Name = "Стиральный порошок", Size = "L" },
+			{
+				Name = "Губки для посуды",
+				Size = "S",
+				Price = 0.02,
+				Look = look("Block", Vector3.new(0.5, 0.25, 0.35), Color3.fromRGB(241, 196, 15)),
+			},
+			{
+				Name = "Средство для посуды",
+				Size = "M",
+				Price = 0.15,
+				Look = look("Cylinder", Vector3.new(0.35, 0.9, 0.35), Color3.fromRGB(46, 204, 113)),
+			},
+			{
+				Name = "Стиральный порошок",
+				Size = "L",
+				Price = 0.6,
+				Look = look("Block", Vector3.new(1, 1.2, 0.5), Color3.fromRGB(230, 126, 34)),
+			},
 		},
 	},
 	{
@@ -30,9 +63,24 @@ local categories: { Category } = {
 		Name = "Красота",
 		Color = Color3.fromRGB(232, 67, 147),
 		Items = {
-			{ Name = "Помада", Size = "S" },
-			{ Name = "Шампунь", Size = "M" },
-			{ Name = "Фен", Size = "L" },
+			{
+				Name = "Помада",
+				Size = "S",
+				Price = 0.05,
+				Look = look("Cylinder", Vector3.new(0.15, 0.4, 0.15), Color3.fromRGB(192, 57, 43)),
+			},
+			{
+				Name = "Шампунь",
+				Size = "M",
+				Price = 0.2,
+				Look = look("Cylinder", Vector3.new(0.4, 0.9, 0.4), Color3.fromRGB(255, 150, 200)),
+			},
+			{
+				Name = "Фен",
+				Size = "L",
+				Price = 1,
+				Look = look("Block", Vector3.new(0.5, 1, 1.1), Color3.fromRGB(40, 40, 45)),
+			},
 		},
 	},
 	{
@@ -40,9 +88,24 @@ local categories: { Category } = {
 		Name = "Общаг",
 		Color = Color3.fromRGB(149, 165, 166),
 		Items = {
-			{ Name = "Носки", Size = "S" },
-			{ Name = "Кружка", Size = "M" },
-			{ Name = "Плед", Size = "L" },
+			{
+				Name = "Носки",
+				Size = "S",
+				Price = 0.01,
+				Look = look("Block", Vector3.new(0.5, 0.12, 0.35), Color3.fromRGB(127, 140, 141)),
+			},
+			{
+				Name = "Кружка",
+				Size = "M",
+				Price = 0.25,
+				Look = look("Cylinder", Vector3.new(0.55, 0.6, 0.55), Color3.fromRGB(236, 240, 241)),
+			},
+			{
+				Name = "Плед",
+				Size = "L",
+				Price = 0.8,
+				Look = look("Roll", Vector3.new(1.2, 0.7, 0.7), Color3.fromRGB(210, 180, 140)),
+			},
 		},
 	},
 	{
@@ -50,9 +113,24 @@ local categories: { Category } = {
 		Name = "Электроника",
 		Color = Color3.fromRGB(241, 196, 15),
 		Items = {
-			{ Name = "Зарядка", Size = "S" },
-			{ Name = "Наушники", Size = "M" },
-			{ Name = "Чайник", Size = "L" },
+			{
+				Name = "Зарядка",
+				Size = "S",
+				Price = 0.08,
+				Look = look("Block", Vector3.new(0.3, 0.3, 0.4), Color3.fromRGB(245, 245, 245)),
+			},
+			{
+				Name = "Наушники",
+				Size = "M",
+				Price = 0.4,
+				Look = look("Ball", Vector3.new(0.6, 0.6, 0.6), Color3.fromRGB(30, 30, 30)),
+			},
+			{
+				Name = "Чайник",
+				Size = "L",
+				Price = 0.9,
+				Look = look("Cylinder", Vector3.new(0.9, 1, 0.9), Color3.fromRGB(189, 195, 199)),
+			},
 		},
 	},
 	{
@@ -60,25 +138,43 @@ local categories: { Category } = {
 		Name = "Детское",
 		Color = Color3.fromRGB(46, 204, 113),
 		Items = {
-			{ Name = "Соска", Size = "S" },
-			{ Name = "Мягкая игрушка", Size = "M" },
-			{ Name = "Конструктор", Size = "L" },
+			{
+				Name = "Соска",
+				Size = "S",
+				Price = 0.03,
+				Look = look("Ball", Vector3.new(0.25, 0.25, 0.25), Color3.fromRGB(135, 206, 250)),
+			},
+			{
+				Name = "Мягкая игрушка",
+				Size = "M",
+				Price = 0.3,
+				Look = look("Ball", Vector3.new(0.7, 0.7, 0.7), Color3.fromRGB(160, 110, 70)),
+			},
+			{
+				Name = "Конструктор",
+				Size = "L",
+				Price = 0.7,
+				Look = look("Block", Vector3.new(1, 0.7, 0.4), Color3.fromRGB(231, 76, 60)),
+			},
 		},
 	},
 }
 
--- Сколько штук товара лежит в коробке, в зависимости от габаритов.
--- Scale — размер товара в руке.
-local itemSizes: { [string]: { Min: number, Max: number, Scale: number } } = {
-	S = { Min = 30, Max = 50, Scale = 0.5 },
-	M = { Min = 15, Max = 25, Scale = 0.8 },
-	L = { Min = 6, Max = 10, Scale = 1.2 },
+-- Сколько штук товара лежит в коробке, в зависимости от габаритов
+local itemSizes: { [string]: { Min: number, Max: number } } = {
+	S = { Min = 30, Max = 50 },
+	M = { Min = 15, Max = 25 },
+	L = { Min = 6, Max = 10 },
 }
 
 local Config = {
-	-- Деньги
+	-- Деньги (в рублях, с копейками)
 	StartingMoney = 0,
-	ItemReward = 2, -- сколько платят за один принятый товар (один пик)
+
+	-- Цена пика меняется со временем: раз в Interval секунд каждая цена сдвигается
+	-- не больше чем на Step и не уходит от базовой дальше чем на Range (0.3 = ±30%).
+	-- Range = 0 — цены не меняются.
+	PriceDrift = { Interval = 60, Step = 0.1, Range = 0.3 },
 
 	-- Форма. Если загрузишь в Roblox свою одежду, впиши сюда её ID:
 	-- тогда наденется она. Пока ID = 0, форма — это цвет тела.
@@ -99,11 +195,11 @@ local Config = {
 	CartWalkSpeed = 12, -- с тележкой игрок идёт медленнее
 
 	-- Штраф за пересорт: на буфере за каждый товар не той категории
-	-- с вероятностью MixFineChance списывают MixFinePicks пиков
+	-- с вероятностью MixFineChance списывают цену MixFinePicks его пиков
 	MixFineChance = 0.5,
 	MixFinePicks = 10,
 
-	ScanCooldown = 0.15, -- минимальная пауза между кликами сканером, сек
+	ScanCooldown = 0.15, -- минимальная пауза между кликами ТСД, сек
 	PalletDelay = 3, -- через сколько секунд после запроса выезжает погрузчик
 	ForkliftSpeed = 18, -- скорость погрузчика, studs в секунду
 

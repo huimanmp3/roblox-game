@@ -1,30 +1,44 @@
 --!strict
 -- Тележки (большая тара на колёсах): берут на стоянке в начале ряда, ставят у стола,
--- кладут в них товар и везут на буфер. За товар не той категории на буфере могут оштрафовать.
+-- кладут в них товар и везут на буфер. Внутри видно, как тележка наполняется товаром.
+-- За товар не той категории на буфере могут оштрафовать.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 
+local Boards = require(script.Parent.Boards)
 local Carry = require(script.Parent.Carry)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Items = require(script.Parent.Items)
 local PlayerData = require(script.Parent.PlayerData)
+local Pricing = require(script.Parent.Pricing)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
 local notify = require(script.Parent.Notify)
 
 local effectEvent = ReplicatedStorage.Remotes.Effect
 
-local BODY_SIZE = Vector3.new(3, 3.4, 5)
+local WIDTH, LENGTH = 3, 5
 local BOTTOM = 0.8 -- высота дна над полом: под ним колёса
-local BODY_COLOR = Color3.fromRGB(150, 155, 160)
+local FLOOR_THICKNESS = 0.2
+local WALL_HEIGHT = 3.2
+local WALL_THICKNESS = 0.15
+local METAL_COLOR = Color3.fromRGB(150, 155, 160)
 local DARK_COLOR = Color3.fromRGB(45, 45, 50)
-local EMPTY_COLOR = Color3.fromRGB(200, 200, 200)
 local PUSH_DISTANCE = 4.4 -- насколько тележка впереди игрока
 local INTERACT_DISTANCE = 10
 local PARKING_DISTANCE = 12
 local BUFFER_DISTANCE = 18
 local BUFFER_SLOT = Vector2.new(3.6, 5.6) -- место под одну тележку на буфере
+local BUFFER_MAX_CARTS = 6 -- больше тележек на одной зоне буфера не стоит: лишние детали тормозят игру
+
+-- Товар внутри: сетка 3 × 5 × 4. Одна фигурка — примерно CartCapacity / 60 штук товара.
+local SLOT_COLUMNS, SLOT_ROWS, SLOT_LAYERS = 3, 5, 4
+local SLOT_COUNT = SLOT_COLUMNS * SLOT_ROWS * SLOT_LAYERS
+local INNER_WIDTH = WIDTH - 2 * WALL_THICKNESS
+local INNER_LENGTH = LENGTH - 2 * WALL_THICKNESS
+local SLOT_SIZE = Vector3.new(INNER_WIDTH / SLOT_COLUMNS, WALL_HEIGHT / SLOT_LAYERS, INNER_LENGTH / SLOT_ROWS)
 
 local Carts = {}
 
@@ -49,8 +63,6 @@ function Carts.refresh(cart: State.Cart)
 	for _, label in cart.labels do
 		label.Text = `{name}\n{cart.count}/{Config.CartCapacity}`
 	end
-	cart.bar.Size = UDim2.fromScale(math.clamp(cart.count / Config.CartCapacity, 0, 1), 1)
-	cart.bar.BackgroundColor3 = if category then category.Color else EMPTY_COLOR
 end
 
 local function spotOf(workTable: State.WorkTable, cart: State.Cart): number?
@@ -140,14 +152,16 @@ local function pickUpParked(player: Player, cart: State.Cart)
 	end
 end
 
--- Деталь, приваренная к корпусу. Корпус создаётся в начале координат, поэтому cframe — смещение от пола.
-local function addWelded(model: Model, body: BasePart, name: string, size: Vector3, cframe: CFrame): Part
+-- Деталь, приваренная к дну. Тележка создаётся в начале координат, поэтому cframe — смещение от пола.
+local function addWelded(model: Model, body: BasePart, name: string, size: Vector3, cframe: CFrame, color: Color3): Part
 	local part = Instance.new("Part")
 	part.Name = name
 	part.Size = size
 	part.CFrame = cframe
-	part.Color = DARK_COLOR
+	part.Color = color
 	part.Material = Enum.Material.Metal
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
 	part.Anchored = false
 	part.CanCollide = false
 	part.CanTouch = false
@@ -161,12 +175,12 @@ local function addWelded(model: Model, body: BasePart, name: string, size: Vecto
 	return part
 end
 
-local function addLabel(body: BasePart, face: Enum.NormalId): TextLabel
+local function addLabel(wall: BasePart, face: Enum.NormalId): TextLabel
 	local gui = Instance.new("SurfaceGui")
 	gui.Face = face
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 	gui.PixelsPerStud = 40
-	gui.Parent = body
+	gui.Parent = wall
 
 	local label = Instance.new("TextLabel")
 	label.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -181,18 +195,18 @@ local function addLabel(body: BasePart, face: Enum.NormalId): TextLabel
 	return label
 end
 
--- Тележка смотрит вперёд по -Z, ручка сзади. Точка опоры — на полу под центром.
+-- Тележка без крышки, смотрит вперёд по -Z, ручка сзади. Точка опоры — на полу под центром.
 local function createCart(): State.Cart
 	local model = Instance.new("Model")
 	model.Name = "Cart"
 
-	local bodyHeight = BOTTOM + BODY_SIZE.Y / 2
+	local floorHeight = BOTTOM + FLOOR_THICKNESS / 2
 	local body = Instance.new("Part")
 	body.Name = "Body"
-	body.Size = BODY_SIZE
-	body.CFrame = CFrame.new(0, bodyHeight, 0)
-	body.PivotOffset = CFrame.new(0, -bodyHeight, 0)
-	body.Color = BODY_COLOR
+	body.Size = Vector3.new(WIDTH, FLOOR_THICKNESS, LENGTH)
+	body.CFrame = CFrame.new(0, floorHeight, 0)
+	body.PivotOffset = CFrame.new(0, -floorHeight, 0)
+	body.Color = METAL_COLOR
 	body.Material = Enum.Material.Metal
 	body.Anchored = true
 	body.CanCollide = false
@@ -201,49 +215,37 @@ local function createCart(): State.Cart
 	body.Parent = model
 	model.PrimaryPart = body
 
+	-- Стенки
+	local wallY = BOTTOM + FLOOR_THICKNESS + WALL_HEIGHT / 2
+	local sideX = WIDTH / 2 - WALL_THICKNESS / 2
+	local endZ = LENGTH / 2 - WALL_THICKNESS / 2
+	local sideSize = Vector3.new(WALL_THICKNESS, WALL_HEIGHT, LENGTH)
+	local endSize = Vector3.new(WIDTH, WALL_HEIGHT, WALL_THICKNESS)
+	local left = addWelded(model, body, "Wall", sideSize, CFrame.new(-sideX, wallY, 0), METAL_COLOR)
+	local right = addWelded(model, body, "Wall", sideSize, CFrame.new(sideX, wallY, 0), METAL_COLOR)
+	addWelded(model, body, "Wall", endSize, CFrame.new(0, wallY, -endZ), METAL_COLOR)
+	local back = addWelded(model, body, "Wall", endSize, CFrame.new(0, wallY, endZ), METAL_COLOR)
+
 	for _, x in { -1.2, 1.2 } do
 		for _, z in { -2, 2 } do
-			local wheel = addWelded(model, body, "Wheel", Vector3.new(0.4, 0.7, 0.7), CFrame.new(x, 0.35, z))
+			local wheel =
+				addWelded(model, body, "Wheel", Vector3.new(0.4, 0.7, 0.7), CFrame.new(x, 0.35, z), DARK_COLOR)
 			wheel.Shape = Enum.PartType.Cylinder
 		end
 	end
 
-	local handleY = BOTTOM + BODY_SIZE.Y - 0.4
+	local handleY = BOTTOM + FLOOR_THICKNESS + WALL_HEIGHT - 0.3
 	for _, x in { -1.2, 1.2 } do
 		addWelded(
 			model,
 			body,
 			"HandleBracket",
 			Vector3.new(0.15, 0.15, 0.5),
-			CFrame.new(x, handleY, BODY_SIZE.Z / 2 + 0.25)
+			CFrame.new(x, handleY, LENGTH / 2 + 0.25),
+			DARK_COLOR
 		)
 	end
-	addWelded(model, body, "Handle", Vector3.new(2.6, 0.2, 0.2), CFrame.new(0, handleY, BODY_SIZE.Z / 2 + 0.5))
-
-	local labels = {
-		addLabel(body, Enum.NormalId.Left),
-		addLabel(body, Enum.NormalId.Right),
-		addLabel(body, Enum.NormalId.Back),
-	}
-
-	-- Сверху полоска заполнения
-	local topGui = Instance.new("SurfaceGui")
-	topGui.Face = Enum.NormalId.Top
-	topGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-	topGui.PixelsPerStud = 30
-	topGui.Parent = body
-
-	local track = Instance.new("Frame")
-	track.AnchorPoint = Vector2.new(0.5, 0.5)
-	track.Position = UDim2.fromScale(0.5, 0.5)
-	track.Size = UDim2.fromScale(0.85, 0.25)
-	track.BackgroundColor3 = DARK_COLOR
-	track.BorderSizePixel = 0
-	track.Parent = topGui
-
-	local bar = Instance.new("Frame")
-	bar.BorderSizePixel = 0
-	bar.Parent = track
+	addWelded(model, body, "Handle", Vector3.new(2.6, 0.2, 0.2), CFrame.new(0, handleY, LENGTH / 2 + 0.5), DARK_COLOR)
 
 	-- Включает и выключает подсказку Tasks.updatePrompts
 	local prompt = Instance.new("ProximityPrompt")
@@ -258,11 +260,15 @@ local function createCart(): State.Cart
 		model = model,
 		body = body,
 		prompt = prompt,
-		labels = labels,
-		bar = bar,
+		labels = {
+			addLabel(left, Enum.NormalId.Left),
+			addLabel(right, Enum.NormalId.Right),
+			addLabel(back, Enum.NormalId.Back),
+		},
 		category = nil,
 		count = 0,
-		wrong = 0,
+		visible = 0,
+		wrongPrices = {},
 	}
 	prompt.Triggered:Connect(function(player)
 		pickUpParked(player, cart)
@@ -272,7 +278,39 @@ local function createCart(): State.Cart
 	return cart
 end
 
--- Тележка у стола игрока, по которой кликнули сканером
+-- Фигурка товара на следующем свободном месте внутри тележки (снизу вверх)
+local function addVisual(cart: State.Cart, item: Config.ItemType)
+	local index = cart.visible
+	local layer = math.floor(index / (SLOT_COLUMNS * SLOT_ROWS))
+	local inLayer = index % (SLOT_COLUMNS * SLOT_ROWS)
+	local column = inLayer % SLOT_COLUMNS
+	local row = math.floor(inLayer / SLOT_COLUMNS)
+
+	local jitter = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5) * 0.15
+	local offset = Vector3.new(
+		-INNER_WIDTH / 2 + SLOT_SIZE.X * (column + 0.5),
+		BOTTOM + FLOOR_THICKNESS + SLOT_SIZE.Y * (layer + 0.5),
+		-INNER_LENGTH / 2 + SLOT_SIZE.Z * (row + 0.5)
+	) + jitter
+
+	local visual = Items.create(item, math.min(SLOT_SIZE.X, SLOT_SIZE.Y, SLOT_SIZE.Z) * 0.95)
+	visual.CFrame = cart.model:GetPivot()
+		* CFrame.new(offset)
+		* CFrame.Angles(0, math.random() * 2 * math.pi, 0)
+		* Items.uprightRotation(item)
+	visual.Anchored = false
+	visual.Massless = true
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = cart.body
+	weld.Part1 = visual
+	weld.Parent = visual
+	visual.Parent = cart.model
+
+	cart.visible += 1
+end
+
+-- Тележка у стола игрока, по которой кликнули ТСД
 function Carts.findAtTable(workTable: State.WorkTable, target: Instance): State.Cart?
 	for _, cart in workTable.carts do
 		if target:IsDescendantOf(cart.model) then
@@ -282,14 +320,14 @@ function Carts.findAtTable(workTable: State.WorkTable, target: Instance): State.
 	return nil
 end
 
--- Положить в тележку товар из руки. За каждый принятый товар платят.
+-- Положить в тележку товар из руки. За каждый пик платят цену этого товара.
 function Carts.putItem(player: Player, cart: State.Cart)
 	local session = State.session(player)
 	local held = session.held
 	if not held then
 		notify(
 			player,
-			"Сначала достань товар из коробки: кликни по ней сканером",
+			"Сначала достань товар из коробки: кликни по ней ТСД",
 			"error"
 		)
 		return
@@ -299,26 +337,38 @@ function Carts.putItem(player: Player, cart: State.Cart)
 		return
 	end
 
+	local price = Pricing.price(held.item)
 	local cartCategory = cart.category
 	if not cartCategory then
 		cart.category = held.category
 	elseif cartCategory ~= held.category then
-		cart.wrong += 1
+		table.insert(cart.wrongPrices, price)
 		notify(
 			player,
 			`Пересорт: «{held.item.Name}» ({held.category.Name}) в тележке «{cartCategory.Name}». На буфере могут оштрафовать`,
 			"error"
 		)
 	end
-	cart.count += 1
 
-	local cartTop = cart.body.Position + Vector3.new(0, BODY_SIZE.Y / 2, 0)
-	effectEvent:FireAllClients("item", held.part.Position, cartTop, held.category.Color)
-	effectEvent:FireClient(player, "reward", cartTop, Config.ItemReward)
+	cart.count += 1
+	local target = math.ceil(cart.count / Config.CartCapacity * SLOT_COUNT)
+	while cart.visible < math.min(target, SLOT_COUNT) do
+		addVisual(cart, held.item)
+	end
+
+	local cartTop = cart.body.Position + Vector3.new(0, WALL_HEIGHT, 0)
+	effectEvent:FireAllClients("item", held.part.Position, cartTop, held.item.Look.Color)
+	effectEvent:FireClient(player, "reward", cartTop, price / 100)
 	held.part:Destroy()
 	session.held = nil
 
-	PlayerData.addMoney(player, Config.ItemReward)
+	PlayerData.addKopecks(player, price)
+	local workTable = session.workTable
+	if workTable then
+		workTable.picks += 1
+		workTable.earned += price
+		Boards.refresh(workTable)
+	end
 	Carts.refresh(cart)
 
 	local category = cart.category
@@ -382,7 +432,7 @@ local function placeInBuffer(model: Model, zone: BasePart)
 	end
 
 	-- Когда буфер заполнен, самая старая тележка уступает место новой
-	local index = buffer.placed % (columns * rows)
+	local index = buffer.placed % math.min(columns * rows, BUFFER_MAX_CARTS)
 	buffer.placed += 1
 	local old = buffer.slots[index]
 	if old then
@@ -424,9 +474,11 @@ local function deliver(player: Player, zone: BasePart)
 
 	-- Каждый товар не той категории проверяющий замечает с вероятностью MixFineChance
 	local caught = 0
-	for _ = 1, cart.wrong do
+	local fine = 0
+	for _, price in cart.wrongPrices do
 		if math.random() < Config.MixFineChance then
 			caught += 1
+			fine += price * Config.MixFinePicks
 		end
 	end
 
@@ -435,18 +487,20 @@ local function deliver(player: Player, zone: BasePart)
 	placeInBuffer(cart.model, zone)
 	notify(player, `Тележка сдана на буфер «{category.Name}»: {cart.count} шт.`, "success")
 
+	local wrong = #cart.wrongPrices
 	if caught > 0 then
-		local fine = caught * Config.MixFinePicks * Config.ItemReward
-		PlayerData.addMoney(player, -fine)
+		PlayerData.addKopecks(player, -fine)
 		notify(
 			player,
-			`Штраф за пересорт: {caught} шт. не той категории, −{fine} ₽`,
+			`Штраф за пересорт: {caught} шт. не той категории, −{PlayerData.format(
+				fine
+			)}`,
 			"error"
 		)
-	elseif cart.wrong > 0 then
+	elseif wrong > 0 then
 		notify(
 			player,
-			`В тележке был пересорт ({cart.wrong} шт.), но в этот раз штрафа не было`,
+			`В тележке был пересорт ({wrong} шт.), но в этот раз штрафа не было`,
 			"info"
 		)
 	end
