@@ -25,7 +25,7 @@ local PALETTE = {
 	Roof = Color3.fromRGB(70, 73, 80), -- тёмный промышленный потолок
 	Plinth = Color3.fromRGB(52, 55, 63),
 	Steel = Color3.fromRGB(62, 66, 76),
-	Deck = Color3.fromRGB(128, 132, 140),
+	Deck = Color3.fromRGB(164, 169, 176), -- оцинкованный настил мезонина
 	Furniture = Color3.fromRGB(222, 223, 227),
 }
 

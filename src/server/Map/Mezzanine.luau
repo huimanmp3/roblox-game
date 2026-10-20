@@ -18,11 +18,16 @@ local LEVEL_HEIGHT = 14
 local DECK_THICKNESS = 0.6
 local RAILING_HEIGHT = 3.5
 
--- Стеллажи: ряды вдоль X, в каждом 10 секций по 2 полки = 20 ячеек
+-- Стеллажи: ряды вдоль X, в каждом 10 секций по 2 полки = 20 ячеек.
+-- Как на настоящем мезонине: светлые стойки идут сквозь все этажи, под полками синие балки,
+-- над ячейками ещё два яруса хранения с коробками.
 local RACK_MIN_X = -110
 local SECTION_WIDTH = 6
 local SECTIONS = 10
-local SHELF_HEIGHTS = { 1.5, 4.5 }
+local RACK_LENGTH = SECTION_WIDTH * SECTIONS
+local SHELF_HEIGHTS = { 1.5, 4.5 } -- полки с ячейками (до них дотягивается игрок)
+local STORAGE_HEIGHTS = { 7.5, 10.5 } -- верхние ярусы хранения, только для вида
+local RACK_TOP = 13 -- высота стоек над полом этажа (чуть ниже настила следующего этажа)
 local RACK_DEPTH = 2
 local ROW_OFFSETS = { 8, 22, 36, 50 } -- от начала половины этажа по Z
 
@@ -38,8 +43,15 @@ local LIFT_MIN_Z, LIFT_MAX_Z = 98, 110
 
 local DECK_COLOR = Color3.fromRGB(120, 125, 135)
 local STEEL_COLOR = Color3.fromRGB(60, 70, 90)
-local RACK_COLOR = Color3.fromRGB(40, 60, 120)
-local SHELF_COLOR = Color3.fromRGB(230, 126, 34)
+local UPRIGHT_COLOR = Color3.fromRGB(176, 198, 222) -- светло-голубые стойки
+local BEAM_COLOR = Color3.fromRGB(32, 92, 176) -- синие балки
+local SHELF_COLOR = Color3.fromRGB(184, 189, 196) -- оцинкованная сталь
+local BOX_COLORS = {
+	Color3.fromRGB(196, 154, 108),
+	Color3.fromRGB(182, 140, 96),
+	Color3.fromRGB(212, 176, 132),
+	Color3.fromRGB(226, 226, 222),
+}
 local RAIL_COLOR = Color3.fromRGB(241, 196, 15)
 local ZONE_COLOR = Color3.fromRGB(150, 155, 160)
 local SHIP_COLOR = Color3.fromRGB(46, 204, 113)
@@ -111,37 +123,134 @@ local function buildRailings(model: Model)
 	end
 end
 
--- Один ряд стеллажа: стойки, верхняя балка и 20 ячеек-полок с адресами
+-- Деталь стеллажа без столкновений, сквозь неё проходит луч ТСД
+local function rackPart(name: string, size: Vector3, cframe: CFrame, color: Color3, parent: Instance): Part
+	return Parts.part({
+		Name = name,
+		Size = size,
+		CFrame = cframe,
+		Color = color,
+		Material = Enum.Material.Metal,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
+	}, parent)
+end
+
+-- Коробка на полке: случайный размер и оттенок картона
+local function addBox(parent: Instance, x: number, shelfTop: number, z: number, maxHeight: number)
+	local size = Vector3.new(
+		1.1 + math.random() * 1.1,
+		math.min(maxHeight, 0.8 + math.random() * 1.4),
+		1.1 + math.random() * 0.7
+	)
+	Parts.part({
+		Name = "StockBox",
+		Size = size,
+		CFrame = CFrame.new(x, shelfTop + size.Y / 2, z) * CFrame.Angles(0, math.rad(math.random(-6, 6)), 0),
+		Color = BOX_COLORS[math.random(#BOX_COLORS)],
+		Material = Enum.Material.Cardboard,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
+	}, parent)
+end
+
+-- Табличка яруса «М1», «М2», «М3» на торце ряда: белая плашка с тёмными буквами
+local function addLevelPlate(parent: Instance, cframe: CFrame, level: number)
+	local plate = rackPart("LevelPlate", Vector3.new(1.6, 1.6, 0.08), cframe, Color3.new(1, 1, 1), parent)
+	plate.Material = Enum.Material.SmoothPlastic
+	for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
+		local gui = Instance.new("SurfaceGui")
+		gui.Face = face
+		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		gui.PixelsPerStud = 50
+		gui.Parent = plate
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Text = `М{level}`
+		label.TextScaled = true
+		label.Font = Enum.Font.BuilderSansExtraBold
+		label.TextColor3 = Color3.fromRGB(25, 27, 34)
+		label.Parent = gui
+	end
+end
+
+-- Сквозные стойки ряда: от пола до верха третьего этажа, с диагональными связями на каждом этаже
+local function buildUprights(model: Model, z: number)
+	local frames = Instance.new("Model")
+	frames.Name = `Uprights{z}`
+	frames.Parent = model
+	local floors = #Config.Mezzanine.Floors
+	local top = levelY(floors) + RACK_TOP
+	local halfDepth = RACK_DEPTH / 2 - 0.1
+	for section = 0, SECTIONS do
+		local x = RACK_MIN_X + section * SECTION_WIDTH
+		for _, side in { -1, 1 } do
+			Parts.part({
+				Name = "RackUpright",
+				Size = Vector3.new(0.3, top - F, 0.3),
+				CFrame = CFrame.new(x, (F + top) / 2, z + side * halfDepth),
+				Color = UPRIGHT_COLOR,
+				Material = Enum.Material.Metal,
+				CanQuery = false,
+			}, frames)
+		end
+		-- Связи рамы: зигзаг из двух диагоналей на каждом этаже
+		for level = 1, floors do
+			local base = levelY(level)
+			local span = RACK_TOP / 2
+			local length = math.sqrt(span * span + (halfDepth * 2) ^ 2)
+			local angle = math.atan2(halfDepth * 2, span)
+			for part = 0, 1 do
+				local direction = if part == 0 then 1 else -1
+				rackPart(
+					"RackBrace",
+					Vector3.new(0.1, length, 0.1),
+					CFrame.new(x, base + span * (part + 0.5), z) * CFrame.Angles(direction * angle, 0, 0),
+					UPRIGHT_COLOR,
+					frames
+				)
+			end
+		end
+	end
+end
+
+-- Ряд стеллажа на одном этаже: синие балки, полки с 20 ячейками, верхние ярусы с коробками, таблички М
 local function buildRow(model: Model, level: number, row: number, z: number, category: Config.Category)
 	local base = levelY(level)
 	local rack = Instance.new("Model")
 	rack.Name = `Row{level}-{row}`
 	rack.Parent = model
+	local centerX = RACK_MIN_X + RACK_LENGTH / 2
 
-	for section = 0, SECTIONS do
-		Parts.part({
-			Name = "Post",
-			Size = Vector3.new(0.3, 7, RACK_DEPTH),
-			CFrame = CFrame.new(RACK_MIN_X + section * SECTION_WIDTH, base + 3.5, z),
-			Color = RACK_COLOR,
-			Material = Enum.Material.Metal,
-		}, rack)
+	-- Синие балки спереди и сзади под каждой полкой
+	local allHeights = table.clone(SHELF_HEIGHTS)
+	for _, height in STORAGE_HEIGHTS do
+		table.insert(allHeights, height)
 	end
-	Parts.part({
-		Name = "TopBeam",
-		Size = Vector3.new(SECTION_WIDTH * SECTIONS, 0.3, RACK_DEPTH),
-		CFrame = CFrame.new(RACK_MIN_X + SECTION_WIDTH * SECTIONS / 2, base + 7, z),
-		Color = RACK_COLOR,
-		Material = Enum.Material.Metal,
-	}, rack)
+	for _, height in allHeights do
+		for _, side in { -1, 1 } do
+			rackPart(
+				"RackBeam",
+				Vector3.new(RACK_LENGTH, 0.4, 0.14),
+				CFrame.new(centerX, base + height - 0.45, z + side * (RACK_DEPTH / 2 - 0.02)),
+				BEAM_COLOR,
+				rack
+			)
+		end
+	end
 
+	-- Полки с ячейками: адрес, категория, этаж. По бокам от товара стоят коробки
 	for section = 1, SECTIONS do
+		local sectionX = RACK_MIN_X + (section - 0.5) * SECTION_WIDTH
 		for shelf, height in SHELF_HEIGHTS do
 			local number = (section - 1) * #SHELF_HEIGHTS + shelf
 			local cell = Parts.part({
 				Name = "Cell",
 				Size = Vector3.new(SECTION_WIDTH - 0.3, 0.5, RACK_DEPTH),
-				CFrame = CFrame.new(RACK_MIN_X + (section - 0.5) * SECTION_WIDTH, base + height, z),
+				CFrame = CFrame.new(sectionX, base + height, z),
 				Color = SHELF_COLOR,
 				Material = Enum.Material.Metal,
 			}, rack)
@@ -149,11 +258,46 @@ local function buildRow(model: Model, level: number, row: number, z: number, cat
 			cell:SetAttribute("Category", category.Id)
 			cell:SetAttribute("Floor", level)
 			Parts.tag(cell, "Cell")
+
+			for _, offset in { -1.9, 1.9 } do
+				addBox(rack, sectionX + offset, base + height + 0.25, z, 2.1)
+			end
 		end
+	end
+
+	-- Верхние ярусы хранения: настил и плотно стоящие коробки
+	for _, height in STORAGE_HEIGHTS do
+		rackPart(
+			"StorageDeck",
+			Vector3.new(RACK_LENGTH, 0.15, RACK_DEPTH - 0.2),
+			CFrame.new(centerX, base + height - 0.2, z),
+			SHELF_COLOR,
+			rack
+		)
+		for section = 1, SECTIONS do
+			local sectionX = RACK_MIN_X + (section - 0.5) * SECTION_WIDTH
+			for _, offset in { -1.5, 0, 1.5 } do
+				if math.random() < 0.8 then
+					addBox(rack, sectionX + offset, base + height - 0.12, z, 2.3)
+				end
+			end
+		end
+	end
+
+	-- Таблички яруса на обоих торцах ряда
+	for _, endX in { RACK_MIN_X - 0.25, RACK_MIN_X + RACK_LENGTH + 0.25 } do
+		addLevelPlate(rack, CFrame.new(endX, base + 9, z) * CFrame.Angles(0, math.pi / 2, 0), level)
 	end
 end
 
 local function buildFloors(model: Model)
+	-- Стойки общие для всех этажей: ряды на каждом этаже стоят друг над другом
+	for _, halfStart in { MIN_Z, MID_Z } do
+		for _, offset in ROW_OFFSETS do
+			buildUprights(model, halfStart + offset)
+		end
+	end
+
 	for level, pair in Config.Mezzanine.Floors do
 		for half, categoryId in pair do
 			local category = categoryById(categoryId)
