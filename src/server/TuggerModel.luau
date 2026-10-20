@@ -4,6 +4,9 @@
 -- Смотрит вперёд по -Z, точка опоры — на полу под центром. У тягача игрока сиденье VehicleSeat,
 -- у тягача NPC на обычном сиденье сидит водитель-NPC.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
 local Npc = require(script.Parent.Npc)
 
 local CHASSIS_SIZE = Vector3.new(3.4, 1.2, 5)
@@ -96,6 +99,18 @@ function TuggerModel.create(withSeat: boolean): (Model, BasePart, VehicleSeat?)
 	chassis.CollisionGroup = TuggerModel.COLLISION_GROUP
 	chassis.Parent = model
 	model.PrimaryPart = chassis
+
+	-- Звук мотора (если задан в Config.Sounds.Tugger)
+	if Config.Sounds.Tugger ~= "" then
+		local motor = Instance.new("Sound")
+		motor.Name = "Motor"
+		motor.SoundId = Config.Sounds.Tugger
+		motor.Looped = true
+		motor.Volume = 0.35
+		motor.RollOffMaxDistance = 50
+		motor.Playing = true
+		motor.Parent = chassis
+	end
 
 	local halfZ = CHASSIS_SIZE.Z / 2
 	local top = CHASSIS_SIZE.Y / 2 -- верх корпуса относительно центра шасси

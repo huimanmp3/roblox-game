@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Events = require(script.Parent.Events)
 local Npc = require(script.Parent.Npc)
 local Pallets = require(script.Parent.Pallets)
 local State = require(script.Parent.State)
@@ -51,6 +52,18 @@ local function buildForklift(): Model
 	root.Transparency = 1
 	root.PivotOffset = CFrame.new(0, -0.1, 0)
 	model.PrimaryPart = root
+
+	-- Звук мотора (если задан в Config.Sounds.Forklift)
+	if Config.Sounds.Forklift ~= "" then
+		local motor = Instance.new("Sound")
+		motor.Name = "Motor"
+		motor.SoundId = Config.Sounds.Forklift
+		motor.Looped = true
+		motor.Volume = 0.4
+		motor.RollOffMaxDistance = 60
+		motor.Playing = true
+		motor.Parent = root
+	end
 
 	addPart(model, "Body", Vector3.new(3.2, 2.2, 4), CFrame.new(0, 1.6, 0.5), BODY_COLOR)
 	addPart(model, "Counterweight", Vector3.new(3.2, 1.4, 1), CFrame.new(0, 1.5, 3), DARK_COLOR)
@@ -208,7 +221,8 @@ function Forklift.requestPallet(workTable: State.WorkTable)
 	workTable.palletOnTheWay = true
 
 	local delivery = workTable.delivery
-	task.delay(Config.PalletDelay, function()
+	-- В «Чёрную пятницу» палеты приезжают быстрее
+	task.delay(Config.PalletDelay * Events.palletDelayMultiplier(), function()
 		if workTable.delivery == delivery then
 			deliver(workTable, delivery)
 		end

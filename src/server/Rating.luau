@@ -102,7 +102,7 @@ local function updateTag(player: Player, rankName: string)
 	if not tag then
 		local billboard = Instance.new("BillboardGui")
 		billboard.Name = TAG_NAME
-		billboard.Size = UDim2.fromOffset(200, 26)
+		billboard.Size = UDim2.fromOffset(260, 26)
 		billboard.StudsOffset = Vector3.new(0, 2.2, 0)
 		billboard.MaxDistance = 60
 		billboard.Parent = head
@@ -118,9 +118,11 @@ local function updateTag(player: Player, rankName: string)
 		tag = billboard
 	end
 
+	-- Под должностью — титул из гардероба наград (атрибут Title), если он надет
 	local label = (tag :: Instance):FindFirstChildOfClass("TextLabel")
 	if label then
-		label.Text = rankName
+		local title = player:GetAttribute("Title")
+		label.Text = if typeof(title) == "string" and title ~= "" then `{rankName} · «{title}»` else rankName
 	end
 end
 

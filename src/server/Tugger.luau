@@ -17,8 +17,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CartModel = require(script.Parent.CartModel)
 local Carts = require(script.Parent.Carts)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Earnings = require(script.Parent.Earnings)
 local Hauling = require(script.Parent.Hauling)
 local PlayerData = require(script.Parent.PlayerData)
+local Progress = require(script.Parent.Progress)
 local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
@@ -347,14 +349,15 @@ local function onTrainDrop(player: Player, drop: BasePart)
 	table.clear(tugger.carts)
 	tugger.kind = nil
 
-	PlayerData.addKopecks(player, pay * 100)
+	local earned = PlayerData.format(Earnings.add(player, pay * 100))
 	Rating.addPoints(player, count * Config.Tugger.PointsPerCart)
+	Progress.record(player, "tuggerCart", count)
 	if full then
-		notify(player, `Заявка выполнена: {count} тар, +{pay} ₽{bonusText}`, "success")
+		notify(player, `Заявка выполнена: {count} тар, +{earned}{bonusText}`, "success")
 	else
 		notify(
 			player,
-			`Сдано {count} тар из {if order then order.count else count}: +{pay} ₽, без бонуса за заявку`,
+			`Сдано {count} тар из {if order then order.count else count}: +{earned}, без бонуса за заявку`,
 			"info"
 		)
 	end

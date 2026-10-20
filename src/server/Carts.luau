@@ -19,11 +19,13 @@ local Boards = require(script.Parent.Boards)
 local CartModel = require(script.Parent.CartModel)
 local Carry = require(script.Parent.Carry)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Earnings = require(script.Parent.Earnings)
 local Grids = require(script.Parent.Grids)
 local Hauling = require(script.Parent.Hauling)
 local Jobs = require(script.Parent.Jobs)
 local PlayerData = require(script.Parent.PlayerData)
 local Pricing = require(script.Parent.Pricing)
+local Progress = require(script.Parent.Progress)
 local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
@@ -394,18 +396,21 @@ function Carts.putItem(player: Player, cart: State.Cart)
 	cart.contents[held.item] = (cart.contents[held.item] or 0) + 1
 	CartModel.syncVisuals(cart, held.item)
 
+	-- Оплата пика с бустами и «Чёрной пятницей»; пик засчитывается в задания и достижения
+	local earned = Earnings.add(player, price)
+	Progress.record(player, "pick")
+
 	local cartTop = cart.body.Position + Vector3.new(0, CartModel.WALL_HEIGHT, 0)
 	effectEvent:FireAllClients("item", held.part.Position, cartTop, held.item.Look.Color)
-	effectEvent:FireClient(player, "reward", cartTop, price / 100)
+	effectEvent:FireClient(player, "reward", cartTop, earned / 100)
 	held.part:Destroy()
 	session.held = nil
 
-	PlayerData.addKopecks(player, price)
 	Rating.recordPick(player, correct)
 	local workTable = session.workTable
 	if workTable then
 		workTable.picks += 1
-		workTable.earned += price
+		workTable.earned += earned
 		Boards.refresh(workTable)
 	end
 	Carts.refresh(cart)
@@ -515,6 +520,7 @@ local function deliverGoods(player: Player, zone: BasePart)
 	notify(player, `Тара сдана на буфер «{category.Name}»: {cart.count} шт.`, "success")
 
 	Rating.addPoints(player, Config.Rating.Points.CartDelivered)
+	Progress.record(player, "cart")
 	if caught > 0 then
 		PlayerData.addKopecks(player, -fine)
 		Rating.addPoints(player, Config.Rating.Points.MixCaught * caught)
@@ -558,6 +564,7 @@ local function onWasteBuffer(player: Player, zone: BasePart)
 			"success"
 		)
 		Rating.addPoints(player, Config.Rating.Points.CardboardDelivered)
+		Progress.record(player, "cardboard")
 		Tasks.refresh(player)
 		return
 	end

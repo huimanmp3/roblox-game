@@ -25,6 +25,9 @@
         },
         "Lift": {
           "$className": "RemoteEvent"
+        },
+        "Rewards": {
+          "$className": "RemoteEvent"
         }
       }
     },

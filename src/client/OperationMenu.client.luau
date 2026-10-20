@@ -346,7 +346,17 @@ player:GetAttributeChangedSignal("Rating"):Connect(refreshCards)
 
 refreshSideBar()
 refreshCards()
--- Новый игрок сразу видит меню выбора операции
-if not currentOperation() then
-	openMenu()
-end
+-- Новый игрок видит меню выбора операции сразу после обучения (атрибут TutorialDone от сервера)
+task.spawn(function()
+	local waited = 0
+	while player:GetAttribute("TutorialDone") ~= true and waited < 600 do
+		-- Пока данные не загрузились, атрибута нет: ждём не дольше 10 секунд
+		if player:GetAttribute("TutorialDone") == nil and waited > 10 then
+			break
+		end
+		waited += task.wait(0.25)
+	end
+	if not currentOperation() then
+		openMenu()
+	end
+end)

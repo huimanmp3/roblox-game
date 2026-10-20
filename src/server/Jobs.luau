@@ -10,9 +10,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CartModel = require(script.Parent.CartModel)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Earnings = require(script.Parent.Earnings)
 local Mezzanine = require(script.Parent.Mezzanine)
 local PlayerData = require(script.Parent.PlayerData)
 local Pricing = require(script.Parent.Pricing)
+local Progress = require(script.Parent.Progress)
 local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
@@ -24,8 +26,7 @@ local Jobs = {}
 
 local function pay(player: Player, item: Config.ItemType, amount: number, share: number): number
 	local kopecks = math.round(Pricing.price(item) * share * amount * Rating.payMultiplier(player))
-	PlayerData.addKopecks(player, kopecks)
-	return kopecks
+	return Earnings.add(player, kopecks)
 end
 
 -- Раскладка: выбрать следующий товар из тары и ячейку для него
@@ -107,6 +108,7 @@ local function clickPutaway(player: Player, job: State.Job, cell: State.Cell)
 
 	local earned = pay(player, item, amount, Config.Mezzanine.PutawayPay)
 	Rating.addPoints(player, Config.Mezzanine.Points.PutawayBatch)
+	Progress.record(player, "putaway")
 	effectEvent:FireAllClients("item", cart.body.Position + Vector3.new(0, 3, 0), cell.part.Position, item.Look.Color)
 	effectEvent:FireClient(player, "reward", cell.part.Position, earned / 100)
 	notify(player, `Разложено: {item.Name} ×{amount} → {cell.address}`, "success")
@@ -201,11 +203,12 @@ function Jobs.ship(player: Player)
 		return
 	end
 	session.job = nil
-	PlayerData.addKopecks(player, Config.Mezzanine.OrderBonus * 100)
+	local bonus = Earnings.add(player, Config.Mezzanine.OrderBonus * 100)
 	Rating.addPoints(player, Config.Mezzanine.Points.OrderShipped)
+	Progress.record(player, "order")
 	notify(
 		player,
-		`Заказ №{job.orderNumber} отгружен: +{Config.Mezzanine.OrderBonus} ₽ бонус`,
+		`Заказ №{job.orderNumber} отгружен: +{PlayerData.format(bonus)} бонус`,
 		"success"
 	)
 end

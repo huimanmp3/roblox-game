@@ -13,13 +13,18 @@ local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
 local Boxes = require(script.Parent.Boxes)
 local Carts = require(script.Parent.Carts)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Events = require(script.Parent.Events)
 local Forklift = require(script.Parent.Forklift)
 local Hauling = require(script.Parent.Hauling)
 local OperationMenu = require(script.Parent.OperationMenu)
 local PlayerData = require(script.Parent.PlayerData)
 local Pricing = require(script.Parent.Pricing)
+local Quests = require(script.Parent.Quests)
 local Rating = require(script.Parent.Rating)
+local Rewards = require(script.Parent.Rewards)
+local RewardsState = require(script.Parent.RewardsState)
 local Scanning = require(script.Parent.Scanning)
+local Season = require(script.Parent.Season)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
 local Tugger = require(script.Parent.Tugger)
@@ -182,6 +187,34 @@ local function onRequest(admin: Player, action: unknown, userId: unknown, value:
 		end
 	elseif action == "teleport" then
 		teleport(admin, target, value)
+	elseif action == "seasonXp" and number then
+		Season.addXp(target, number)
+	elseif action == "seasonPremium" then
+		Season.setPremium(target, not Season.isPremium(target))
+	elseif action == "boost" and number then
+		Rewards.grant(target, { Kind = "boost", Minutes = number })
+	elseif action == "dailyAgain" then
+		-- Бонус дня снова доступен, серия продолжается
+		local daily = PlayerData.section(target, "daily")
+		if daily then
+			daily.lastDay = Events.today() - 1
+		end
+	elseif action == "questsDone" then
+		for _, entry in Quests.list(target) do
+			local definition = Quests.definition(entry.id)
+			if definition then
+				entry.progress = definition.Target
+			end
+		end
+	elseif action == "tutorialAgain" then
+		local tutorial = PlayerData.section(target, "tutorial")
+		if tutorial then
+			tutorial.done = false
+		end
+		target:SetAttribute("TutorialDone", false)
+	elseif action == "event" then
+		-- 1 — включить «Чёрную пятницу», 0 — выключить, иначе — по расписанию
+		Events.force(if number == 1 then true elseif number == 0 then false else nil)
 	elseif action == "hurryNpc" then
 		Hauling.hurry()
 	elseif action == "drift" then
@@ -197,6 +230,7 @@ local function onRequest(admin: Player, action: unknown, userId: unknown, value:
 	else
 		return
 	end
+	RewardsState.markDirty(target)
 	notify(admin, "Готово", "success")
 end
 

@@ -12,8 +12,10 @@ local QR_SIZE = Vector3.new(1.6, 1.6, 0.08)
 local QR_CELLS = 9
 local GRID = { -1.65, 0, 1.65 } -- стопки 3×3 на поддоне
 local LEVELS = 4
--- Наклейки только на сторонах, которые видны от стола: так меньше нагрузки на клиент
-local BOX_FACES = { Enum.NormalId.Front, Enum.NormalId.Left }
+local LABEL_DISTANCE = 45 -- дальше наклейки коробок не рисуются: меньше нагрузки на клиент
+local WOOD_COLOR = Color3.fromRGB(206, 168, 116)
+local TAPE_COLOR = Color3.fromRGB(214, 186, 140)
+local DARK_TEXT = Color3.fromRGB(30, 30, 36)
 
 local Pallets = {}
 
@@ -60,37 +62,111 @@ local function drawQr(card: BasePart)
 	end
 end
 
--- Коробка с наклейками: название товара на полосе цвета категории
+local function boxGui(part: BasePart, face: Enum.NormalId): SurfaceGui
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = "Label"
+	gui.Face = face
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 60
+	gui.MaxDistance = LABEL_DISTANCE
+	gui.Parent = part
+	return gui
+end
+
+local function textLabel(parent: Instance, text: string, position: UDim2, size: UDim2, color: Color3): TextLabel
+	local label = Instance.new("TextLabel")
+	label.Position = position
+	label.Size = size
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextScaled = true
+	label.Font = Enum.Font.BuilderSansBold
+	label.TextColor3 = color
+	label.Parent = parent
+	return label
+end
+
+-- Коробка из гофрокартона: скотч сверху, транспортная наклейка спереди (категория, товар,
+-- штрихкод) и полоса категории со стрелками «верх» сбоку
 local function createBoxPart(category: Config.Category, item: Config.ItemType): Part
 	local part = Instance.new("Part")
 	part.Name = "Box"
 	part.Size = Pallets.BOX_SIZE
-	part.Color = Pallets.BOX_COLOR
+	-- Картон немного разного оттенка, как у настоящих коробок
+	part.Color = Pallets.BOX_COLOR:Lerp(Color3.fromRGB(168, 126, 82), math.random() * 0.45)
 	part.Material = Enum.Material.Cardboard
 	part.Anchored = true
 
-	for _, face in BOX_FACES do
-		local gui = Instance.new("SurfaceGui")
-		gui.Name = "Label"
-		gui.Face = face
-		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-		gui.PixelsPerStud = 60
-		gui.Parent = part
+	local tape = Instance.new("Frame")
+	tape.AnchorPoint = Vector2.new(0.5, 0)
+	tape.Position = UDim2.fromScale(0.5, 0)
+	tape.Size = UDim2.fromScale(0.24, 1)
+	tape.BackgroundColor3 = TAPE_COLOR
+	tape.BackgroundTransparency = 0.15
+	tape.BorderSizePixel = 0
+	tape.Parent = boxGui(part, Enum.NormalId.Top)
 
-		local label = Instance.new("TextLabel")
-		label.AnchorPoint = Vector2.new(0.5, 0.5)
-		label.Position = UDim2.fromScale(0.5, 0.5)
-		label.Size = UDim2.fromScale(0.95, 0.4)
-		label.BackgroundColor3 = category.Color
-		label.BorderSizePixel = 0
-		label.Text = item.Name
-		label.TextScaled = true
-		label.Font = Enum.Font.BuilderSansBold
-		label.TextColor3 = Color3.new(1, 1, 1)
-		label.Parent = gui
-	end
+	local sticker = Instance.new("Frame")
+	sticker.Position = UDim2.fromScale(0.1, 0.12)
+	sticker.Size = UDim2.fromScale(0.8, 0.62)
+	sticker.BackgroundColor3 = Color3.fromRGB(248, 248, 246)
+	sticker.BorderSizePixel = 0
+	sticker.Parent = boxGui(part, Enum.NormalId.Front)
+	local stickerCorner = Instance.new("UICorner")
+	stickerCorner.CornerRadius = UDim.new(0.06, 0)
+	stickerCorner.Parent = sticker
+	local stripe =
+		textLabel(sticker, category.Name, UDim2.fromScale(0, 0), UDim2.fromScale(1, 0.24), Color3.new(1, 1, 1))
+	stripe.BackgroundTransparency = 0
+	stripe.BackgroundColor3 = category.Color
+	stripe.BorderSizePixel = 0
+	textLabel(sticker, item.Name, UDim2.fromScale(0.05, 0.28), UDim2.fromScale(0.9, 0.3), DARK_TEXT)
+	-- Штрихкод из символов-полосок: одна надпись вместо десятков рамок
+	local barcode = textLabel(
+		sticker,
+		"▌▐▌▌▐▐▌▐▌▌▐▌▐▐▌▌",
+		UDim2.fromScale(0.08, 0.62),
+		UDim2.fromScale(0.84, 0.3),
+		DARK_TEXT
+	)
+	barcode.Font = Enum.Font.Code
+
+	local side = boxGui(part, Enum.NormalId.Left)
+	local band = textLabel(side, category.Name, UDim2.fromScale(0, 0.55), UDim2.fromScale(1, 0.28), Color3.new(1, 1, 1))
+	band.BackgroundTransparency = 0
+	band.BackgroundColor3 = category.Color
+	band.BorderSizePixel = 0
+	textLabel(side, "↑ ↑  ВЕРХ", UDim2.fromScale(0.1, 0.12), UDim2.fromScale(0.8, 0.28), DARK_TEXT)
 
 	return part
+end
+
+-- Деревянный поддон: доски настила, бруски и нижние доски (только для вида, без столкновений)
+local function buildPalletWood(model: Model, base: BasePart)
+	local function plank(name: string, size: Vector3, offset: CFrame)
+		local part = Instance.new("Part")
+		part.Name = name
+		part.Size = size
+		part.CFrame = base.CFrame * offset
+		part.Color = WOOD_COLOR:Lerp(Color3.fromRGB(176, 136, 88), math.random() * 0.5)
+		part.Material = Enum.Material.WoodPlanks
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+		part.Parent = model
+	end
+	local half = BASE_SIZE.Y / 2
+	for index = 0, 4 do
+		local z = -BASE_SIZE.Z / 2 + 0.5 + index * (BASE_SIZE.Z - 1) / 4
+		plank("DeckBoard", Vector3.new(BASE_SIZE.X, 0.14, 0.9), CFrame.new(0, half - 0.07, z))
+	end
+	for _, x in GRID do
+		for _, z in GRID do
+			plank("Block", Vector3.new(0.9, 0.3, 0.9), CFrame.new(x * 1.2, 0, z * 1.2))
+		end
+		plank("BottomBoard", Vector3.new(0.9, 0.12, BASE_SIZE.Z), CFrame.new(x * 1.2, -half + 0.06, 0))
+	end
 end
 
 local function randomCategory(): Config.Category
@@ -107,11 +183,13 @@ function Pallets.create(): State.Pallet
 	base.Size = BASE_SIZE
 	base.CFrame = CFrame.new(0, BASE_SIZE.Y / 2, 0)
 	base.PivotOffset = CFrame.new(0, -BASE_SIZE.Y / 2, 0)
-	base.Color = Color3.fromRGB(176, 132, 84)
+	base.Color = WOOD_COLOR
 	base.Material = Enum.Material.WoodPlanks
+	base.Transparency = 1 -- сам поддон собран из досок (buildPalletWood), основание невидимое
 	base.Anchored = true
 	base.Parent = model
 	model.PrimaryPart = base
+	buildPalletWood(model, base)
 
 	-- Карточка с QR-кодом на передней стороне палета
 	local qr = Instance.new("Part")

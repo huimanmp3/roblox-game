@@ -9,6 +9,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Cosmetics = require(script.Parent.Cosmetics)
 local PlayerData = require(script.Parent.PlayerData)
 local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
@@ -50,17 +51,18 @@ function Uniform.refreshCollision(player: Player)
 	end
 end
 
-local function applyUniform(humanoid: Humanoid)
+-- Цвета формы — обычные или из гардероба наград (Cosmetics)
+local function applyUniform(humanoid: Humanoid, top: Color3, bottom: Color3)
 	local uniform = Config.Uniform
 	local description = humanoid:GetAppliedDescription()
 	description.GraphicTShirt = 0
 	description.Shirt = uniform.ShirtId
 	description.Pants = uniform.PantsId
-	description.TorsoColor = uniform.TopColor
-	description.LeftArmColor = uniform.TopColor
-	description.RightArmColor = uniform.TopColor
-	description.LeftLegColor = uniform.BottomColor
-	description.RightLegColor = uniform.BottomColor
+	description.TorsoColor = top
+	description.LeftArmColor = top
+	description.RightArmColor = top
+	description.LeftLegColor = bottom
+	description.RightLegColor = bottom
 
 	-- 3D-одежда (куртки, футболки) закрыла бы форму. Снимаем её, а причёски и шапки оставляем.
 	local kept = {}
@@ -92,7 +94,8 @@ function Uniform.dressUp(player: Player)
 	end
 
 	changing[player] = true
-	local ok, err = pcall(applyUniform, humanoid)
+	local top, bottom = Cosmetics.uniformColors(player)
+	local ok, err = pcall(applyUniform, humanoid, top, bottom)
 	changing[player] = nil
 
 	if not ok then
@@ -200,7 +203,21 @@ local function registerGroups()
 	PhysicsService:CollisionGroupSetCollidable(TUGGER_GROUP, K2_GATE_GROUP, false)
 end
 
+-- Игрок сменил форму в гардеробе: если он уже переоделся, перекрашиваем
+local function onCosmeticsChanged(player: Player)
+	local character = player.Character
+	local humanoid = if character then character:FindFirstChildOfClass("Humanoid") else nil
+	if not State.session(player).uniform or not humanoid or changing[player] then
+		return
+	end
+	local top, bottom = Cosmetics.uniformColors(player)
+	changing[player] = true
+	pcall(applyUniform, humanoid, top, bottom)
+	changing[player] = nil
+end
+
 function Uniform.start()
+	Cosmetics.onEquip(onCosmeticsChanged)
 	registerGroups()
 
 	for _, gate in CollectionService:GetTagged("SecurityGate") do

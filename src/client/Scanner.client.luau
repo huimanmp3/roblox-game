@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Sfx = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sfx"))
 local scanEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Scan") :: RemoteEvent
 
 local LASER_TIME = 0.08
@@ -57,6 +58,7 @@ local function onActivated(tool: Tool)
 	mouse.TargetFilter = character
 	local target = mouse.Target
 	showLaser(tool, mouse.Hit.Position)
+	Sfx.play("Scan")
 	if target then
 		scanEvent:FireServer(target)
 	end

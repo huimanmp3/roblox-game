@@ -22,6 +22,9 @@ export type Profile = {
 	rating: number,
 	quality: number, -- от 0 до 1
 	picks: number, -- всего пиков за всё время
+	-- Прогресс наград: счётчики, задания дня, сезон, достижения, косметика и т. п.
+	-- Каждый модуль хранит здесь свой раздел (см. PlayerData.section)
+	extra: { [string]: any },
 }
 
 local PlayerData = {}
@@ -29,6 +32,8 @@ local PlayerData = {}
 local profiles: { [Player]: Profile } = {}
 local loaded: { [Player]: boolean } = {}
 local listeners: { (Player) -> () } = {}
+local loadedListeners: { (Player) -> () } = {}
+local ready: { [Player]: boolean } = {}
 
 local storeOk, storeResult = pcall(function()
 	return DataStoreService:GetDataStore(STORE_NAME)
@@ -68,6 +73,29 @@ function PlayerData.changed(player: Player)
 	for _, listener in listeners do
 		task.spawn(listener, player)
 	end
+end
+
+-- Подписка на «данные игрока загружены» (или не загрузились — тогда прогресс с нуля).
+-- Для игроков, которые уже загружены, вызывается сразу.
+function PlayerData.onLoaded(listener: (Player) -> ())
+	table.insert(loadedListeners, listener)
+	for player in ready do
+		task.spawn(listener, player)
+	end
+end
+
+-- Раздел прогресса в профиле: таблица с именем name (создаётся при первом обращении)
+function PlayerData.section(player: Player, name: string): { [string]: any }?
+	local profile = profiles[player]
+	if not profile then
+		return nil
+	end
+	local section = profile.extra[name]
+	if typeof(section) ~= "table" then
+		section = {}
+		profile.extra[name] = section
+	end
+	return section
 end
 
 -- Начислить (или списать, если число отрицательное) деньги в копейках. Штраф не уводит в минус.
@@ -120,14 +148,26 @@ local function load(player: Player)
 		rating = 0,
 		quality = 1,
 		picks = 0,
+		extra = {},
 	}
 	profiles[player] = profile
 	createLeaderstats(player)
 	PlayerData.changed(player)
 
+	local function finish()
+		if not player.Parent then
+			return
+		end
+		ready[player] = true
+		for _, listener in loadedListeners do
+			task.spawn(listener, player)
+		end
+	end
+
 	local dataStore = store
 	if not dataStore then
 		warn("DataStore недоступен: прогресс не будет сохраняться")
+		finish()
 		return
 	end
 
@@ -141,6 +181,7 @@ local function load(player: Player)
 		warn(
 			`Не удалось загрузить данные {player.Name}: {data}. Прогресс в этот раз не сохранится`
 		)
+		finish()
 		return
 	end
 
@@ -149,9 +190,13 @@ local function load(player: Player)
 		profile.rating = tonumber(data.rating) or profile.rating
 		profile.quality = tonumber(data.quality) or profile.quality
 		profile.picks = tonumber(data.picks) or profile.picks
+		if typeof(data.extra) == "table" then
+			profile.extra = data.extra
+		end
 	end
 	loaded[player] = true
 	PlayerData.changed(player)
+	finish()
 end
 
 local function save(player: Player)
@@ -166,6 +211,7 @@ local function save(player: Player)
 		rating = profile.rating,
 		quality = profile.quality,
 		picks = profile.picks,
+		extra = profile.extra,
 	}
 	local ok, err = withRetries(function()
 		dataStore:SetAsync(keyFor(player), data, { player.UserId })
@@ -181,6 +227,7 @@ function PlayerData.start()
 		save(player)
 		profiles[player] = nil
 		loaded[player] = nil
+		ready[player] = nil
 	end)
 
 	-- Сервер закрывается: успеваем сохранить всех

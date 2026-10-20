@@ -72,15 +72,21 @@ local moneyLine = addLine(4, 14, MUTED, Enum.Font.BuilderSansMedium)
 local operationLine = addLine(5, 14, MUTED, Enum.Font.BuilderSansMedium)
 
 local divider = Instance.new("Frame")
-divider.LayoutOrder = 6
+divider.LayoutOrder = 7
 divider.Size = UDim2.new(1, 0, 0, 1)
 divider.BackgroundColor3 = Color3.fromRGB(150, 120, 200)
 divider.BorderSizePixel = 0
 divider.Parent = panel
 
-local taskCaption = addLine(7, 12, Color3.fromRGB(241, 196, 15), Enum.Font.BuilderSansBold)
+-- «Чёрная пятница» и буст ×2: строки видны, только пока действуют
+local eventLine = addLine(6, 14, Color3.fromRGB(241, 196, 15), Enum.Font.BuilderSansBold)
+eventLine.Visible = false
+local boostLine = addLine(6, 14, Color3.fromRGB(46, 204, 113), Enum.Font.BuilderSansBold)
+boostLine.Visible = false
+
+local taskCaption = addLine(8, 12, Color3.fromRGB(241, 196, 15), Enum.Font.BuilderSansBold)
 taskCaption.Text = "ЗАДАНИЕ"
-local taskLine = addLine(8, 16, Color3.new(1, 1, 1), Enum.Font.BuilderSansBold)
+local taskLine = addLine(9, 16, Color3.new(1, 1, 1), Enum.Font.BuilderSansBold)
 
 local function updateStats()
 	local rank = player:GetAttribute("Rank")
@@ -138,6 +144,28 @@ local existingStats = player:FindFirstChild("leaderstats")
 if existingStats then
 	task.spawn(watchMoney, existingStats)
 end
+
+local function updateBonuses()
+	local event = ReplicatedStorage:GetAttribute("Event")
+	eventLine.Visible = typeof(event) == "string" and event ~= ""
+	eventLine.Text = `{event}: ×2 оплата и опыт сезона!`
+
+	local boostUntil = player:GetAttribute("BoostUntil")
+	local left = if typeof(boostUntil) == "number" then boostUntil - workspace:GetServerTimeNow() else 0
+	boostLine.Visible = left > 0
+	if left > 0 then
+		boostLine.Text =
+			string.format("Буст ×2 к заработку: %d:%02d", math.floor(left / 60), math.floor(left % 60))
+	end
+end
+
+-- Раз в секунду: идёт отсчёт буста
+task.spawn(function()
+	while true do
+		updateBonuses()
+		task.wait(1)
+	end
+end)
 
 updateStats()
 updateMoney()

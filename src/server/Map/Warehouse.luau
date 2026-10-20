@@ -200,6 +200,20 @@ function Warehouse.build(parent: Instance)
 	end
 
 	buildBlockK2(model)
+
+	-- Таблицы лидеров на южной стене у входа: недельный заработок и рейтинг (заполняет Leaderboards)
+	for _, board in { { x = 23, kind = "weekly" }, { x = 39, kind = "rating" } } do
+		local part = Parts.part({
+			Name = "Leaderboard",
+			Size = Vector3.new(14, 9, 0.3),
+			CFrame = CFrame.new(board.x, F + 10, MIN_Z + 0.2) * CFrame.Angles(0, math.pi, 0),
+			Color = Color3.fromRGB(24, 26, 33),
+			CanCollide = false,
+			CanQuery = false,
+		}, model)
+		part:SetAttribute("Kind", board.kind)
+		Parts.tag(part, "Leaderboard")
+	end
 	Parts.sign(
 		"БЛОК К4 · ПРИЁМКА",
 		CFrame.new(45, F + 16, -74),
