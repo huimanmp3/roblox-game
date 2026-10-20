@@ -78,6 +78,7 @@ export type Tugger = {
 	chassis: BasePart,
 	seat: VehicleSeat,
 	owner: Player,
+	prompt: ProximityPrompt, -- подсказка на тягаче: сесть, прицепить тару, сдать паровоз или тягач
 	carts: { Cart }, -- прицепленные тары по порядку от тягача
 	kind: string?, -- что везёт паровоз: "cardboard" или "empty"
 	idleSince: number?, -- с какого момента в тягаче никто не сидит

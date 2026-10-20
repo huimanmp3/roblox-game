@@ -4,6 +4,8 @@
 -- картон — у буфера мусора К4, пустые — у зоны пустых тар мезонина. Сдают картон на утилизацию в К2,
 -- пустые — в буфер пустых тар К4. Ведёт тягач сам игрок (клиентский скрипт TuggerDrive).
 -- Каждому карщику тары выдаются отдельно, поэтому его работа не зависит от других игроков.
+-- Все действия за рулём — одной подсказкой E на самом тягаче: в зоне погрузки она цепляет тару,
+-- в зоне сдачи сдаёт паровоз, на стоянке сдаёт тягач.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -20,6 +22,8 @@ local TuggerModel = require(script.Parent.TuggerModel)
 local notify = require(script.Parent.Notify)
 
 local DEPOT_DISTANCE = 14
+local ZONE_MARGIN = 6 -- насколько можно выехать за край зоны погрузки или сдачи
+local PROMPT_REFRESH = 0.2
 local IDLE_DESPAWN = 60 -- через сколько секунд пустой тягач без водителя возвращается на стоянку
 local TRAIN_WELD = "TrainWeld"
 
@@ -27,8 +31,20 @@ local Tugger = {}
 
 local tuggers: { [Player]: State.Tugger } = {}
 
-local function zoneReach(zone: BasePart): number
-	return math.max(zone.Size.X, zone.Size.Z) / 2 + 8
+local function tagged(tag: string): { BasePart }
+	local parts = {}
+	for _, instance in CollectionService:GetTagged(tag) do
+		if instance:IsA("BasePart") then
+			table.insert(parts, instance)
+		end
+	end
+	return parts
+end
+
+-- Стоит ли тягач в зоне (с запасом ZONE_MARGIN по краям)
+local function inZone(zone: BasePart, position: Vector3): boolean
+	local offset = zone.CFrame:PointToObjectSpace(position)
+	return math.abs(offset.X) <= zone.Size.X / 2 + ZONE_MARGIN and math.abs(offset.Z) <= zone.Size.Z / 2 + ZONE_MARGIN
 end
 
 local function kindName(kind: string?): string
@@ -87,6 +103,8 @@ local function onOccupantChanged(tugger: State.Tugger)
 	Tasks.refresh(tugger.owner)
 end
 
+local onTuggerPrompt: (Player, State.Tugger) -> ()
+
 local function spawnTugger(player: Player, depot: BasePart)
 	local profile = PlayerData.get(player)
 	local rating = if profile then profile.rating else 0
@@ -130,11 +148,21 @@ local function spawnTugger(player: Player, depot: BasePart)
 	seat:SetAttribute("Speed", Config.Tugger.Speed)
 	seat:SetAttribute("GroundY", chassis.Position.Y)
 
+	-- Одна подсказка на самом тягаче. Она всегда ближе всех к водителю, поэтому её не перекроют
+	-- другие подсказки на E. Что она делает, зависит от того, где стоит тягач (refreshPrompt).
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Сесть в тягач"
+	prompt.ObjectText = "Тягач"
+	prompt.MaxActivationDistance = 10
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = chassis
+
 	local tugger: State.Tugger = {
 		model = model,
 		chassis = chassis,
 		seat = seat,
 		owner = player,
+		prompt = prompt,
 		carts = {},
 		kind = nil,
 		idleSince = os.clock(),
@@ -144,26 +172,14 @@ local function spawnTugger(player: Player, depot: BasePart)
 	seat:GetPropertyChangedSignal("Occupant"):Connect(function()
 		onOccupantChanged(tugger)
 	end)
-
-	-- Сесть обратно, если вышел: подсказка на самом тягаче
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Сесть в тягач"
-	prompt.ObjectText = "Тягач"
-	prompt.MaxActivationDistance = 10
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = chassis
 	prompt.Triggered:Connect(function(who)
-		if who == player then
-			seatPlayer(player, tugger)
-		else
-			notify(who, "Это чужой тягач", "error")
-		end
+		onTuggerPrompt(who, tugger)
 	end)
 
 	seatPlayer(player, tugger)
 	notify(
 		player,
-		"Тягач твой! W/S — газ и назад, A/D — поворот. Цепляй тары (E у тары)",
+		"Тягач твой! W/S — газ и назад, A/D — поворот. Заезжай на синюю погрузку и жми E",
 		"success"
 	)
 	Tasks.refresh(player)
@@ -193,10 +209,6 @@ local function onPickup(player: Player, zone: BasePart)
 	local tugger = tuggers[player]
 	if not tugger or tugger.seat.Occupant == nil then
 		notify(player, "Здесь грузят паровозы карщиков: нужен тягач", "error")
-		return
-	end
-	if (tugger.chassis.Position - zone.Position).Magnitude > zoneReach(zone) then
-		notify(player, "Подъедь к погрузке поближе", "error")
 		return
 	end
 	local kind = zone:GetAttribute("Kind")
@@ -257,10 +269,6 @@ local function onTrainDrop(player: Player, drop: BasePart)
 	local tugger = tuggers[player]
 	if not tugger or #tugger.carts == 0 then
 		notify(player, "Сюда карщики привозят паровоз из тар", "info")
-		return
-	end
-	if (tugger.chassis.Position - drop.Position).Magnitude > zoneReach(drop) + 30 then
-		notify(player, "Подъедь ближе вместе с паровозом", "error")
 		return
 	end
 	if drop:GetAttribute("Kind") ~= tugger.kind then
@@ -324,6 +332,83 @@ local function addZonePrompt(
 	end)
 end
 
+-- Что сейчас можно сделать подсказкой на тягаче и в какой зоне
+local function currentAction(tugger: State.Tugger): (string?, BasePart?)
+	if tugger.seat.Occupant == nil then
+		return "sit", nil
+	end
+	local position = tugger.chassis.Position
+	local count = #tugger.carts
+	if count > 0 then
+		for _, drop in tagged("TrainDrop") do
+			if drop:GetAttribute("Kind") == tugger.kind and inZone(drop, position) then
+				return "drop", drop
+			end
+		end
+	end
+	if count < Config.Tugger.MaxCarts then
+		for _, pickup in tagged("TrainPickup") do
+			local kind = pickup:GetAttribute("Kind")
+			if (tugger.kind == nil or tugger.kind == kind) and inZone(pickup, position) then
+				return "pickup", pickup
+			end
+		end
+	end
+	if count == 0 then
+		for _, depot in tagged("TuggerDepot") do
+			if inZone(depot, position) then
+				return "return", depot
+			end
+		end
+	end
+	return nil, nil
+end
+
+local function refreshPrompt(tugger: State.Tugger)
+	local action, zone = currentAction(tugger)
+	local prompt = tugger.prompt
+	local count = #tugger.carts
+	local max = Config.Tugger.MaxCarts
+	if action == "sit" then
+		prompt.ActionText = "Сесть в тягач"
+		prompt.ObjectText = "Тягач"
+	elseif action == "pickup" and zone then
+		local what = if zone:GetAttribute("Kind") == "cardboard"
+			then "Тары с картоном"
+			else "Пустые тары"
+		prompt.ActionText = "Прицепить тару"
+		prompt.ObjectText = `{what} · в паровозе {count}/{max}`
+	elseif action == "drop" then
+		prompt.ActionText = "Сдать паровоз"
+		prompt.ObjectText = `{count} тар · +{count * Config.Tugger.PayPerCart} ₽`
+	elseif action == "return" then
+		prompt.ActionText = "Сдать тягач"
+		prompt.ObjectText = "Стоянка тягачей"
+	end
+	prompt.Enabled = action ~= nil
+end
+
+onTuggerPrompt = function(player: Player, tugger: State.Tugger)
+	if player ~= tugger.owner then
+		notify(player, "Это чужой тягач", "error")
+		return
+	end
+	local action, zone = currentAction(tugger)
+	if action == "sit" then
+		seatPlayer(player, tugger)
+	elseif action == "pickup" and zone then
+		onPickup(player, zone)
+	elseif action == "drop" and zone then
+		onTrainDrop(player, zone)
+	elseif action == "return" then
+		despawn(tugger)
+		notify(player, "Тягач сдан на стоянку", "info")
+		Tasks.refresh(player)
+		return
+	end
+	refreshPrompt(tugger)
+end
+
 -- Игрок сменил операцию: пустой тягач уезжает на стоянку. false — если за ним ещё паровоз.
 -- force — убрать тягач и с паровозом (тары отцепятся, их довезёт NPC).
 function Tugger.dismiss(player: Player, force: boolean?): boolean
@@ -350,22 +435,15 @@ function Tugger.start()
 			)
 		end
 	end
-	for _, pickup in CollectionService:GetTagged("TrainPickup") do
-		if pickup:IsA("BasePart") then
-			local object = if pickup:GetAttribute("Kind") == "cardboard"
-				then "Погрузка: тары с картоном"
-				else "Погрузка: пустые тары"
-			addZonePrompt(pickup, "Прицепить тару", object, zoneReach(pickup), onPickup)
+	-- Погрузка и сдача паровоза — подсказкой на самом тягаче, она обновляется по ходу езды
+	task.spawn(function()
+		while true do
+			task.wait(PROMPT_REFRESH)
+			for _, tugger in tuggers do
+				refreshPrompt(tugger)
+			end
 		end
-	end
-	for _, drop in CollectionService:GetTagged("TrainDrop") do
-		if drop:IsA("BasePart") then
-			local object = if drop:GetAttribute("Kind") == "cardboard"
-				then "Утилизация"
-				else "Приём пустых тар"
-			addZonePrompt(drop, "Сдать паровоз", object, zoneReach(drop), onTrainDrop)
-		end
-	end
+	end)
 
 	Hauling.onTimeout(onTimeout)
 	Players.PlayerRemoving:Connect(function(player)

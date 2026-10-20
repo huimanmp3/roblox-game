@@ -93,12 +93,12 @@ end
 
 -- Приём пустых тар с мезонина: у северного края буфера пустых тар К4
 local function buildEmptyDrop(model: Model)
-	local drop = zone(model, "EmptyCartsDrop", Vector2.new(26, 172), Vector2.new(86, 182), EMPTY_COLOR)
+	local drop = zone(model, "EmptyCartsDrop", Vector2.new(26, 172), Vector2.new(86, 186), EMPTY_COLOR)
 	drop:SetAttribute("Kind", "empty")
 	Parts.tag(drop, "TrainDrop")
 	Parts.sign(
 		"ПРИЁМ ПУСТЫХ ТАР С МЕЗОНИНА",
-		CFrame.new(56, F + 7, 182.5),
+		CFrame.new(56, F + 7, 186.5),
 		Vector3.new(24, 2.2, 0.3),
 		DARK_COLOR,
 		model
@@ -123,13 +123,14 @@ function Logistics.build(parent: Instance)
 	buildRoad(model)
 	buildUtilization(model)
 	buildEmptyDrop(model)
-	-- Картон: между буфером мусора К4 и дорогой
+	-- Картон: между буфером мусора К4 и дорогой. Зона с запасом достаёт до дороги,
+	-- поэтому цеплять тары можно, не съезжая с неё
 	buildPickup(
 		model,
 		"CardboardPickup",
 		"cardboard",
-		Vector2.new(110, 174),
-		Vector2.new(150, 184),
+		Vector2.new(100, 172),
+		Vector2.new(160, 186),
 		"ПОГРУЗКА ТЯГАЧЕЙ · КАРТОН"
 	)
 	-- Пустые тары: между зоной пустых тар мезонина и дорогой
@@ -137,8 +138,8 @@ function Logistics.build(parent: Instance)
 		model,
 		"EmptyCartsPickup",
 		"empty",
-		Vector2.new(-100, 166),
-		Vector2.new(-60, 176),
+		Vector2.new(-100, 164),
+		Vector2.new(-56, 184),
 		"ПОГРУЗКА ТЯГАЧЕЙ · ПУСТЫЕ ТАРЫ"
 	)
 end
