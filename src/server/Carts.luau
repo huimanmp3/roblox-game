@@ -16,19 +16,21 @@ local Boards = require(script.Parent.Boards)
 local CartModel = require(script.Parent.CartModel)
 local Carry = require(script.Parent.Carry)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Grids = require(script.Parent.Grids)
+local Hauling = require(script.Parent.Hauling)
 local Jobs = require(script.Parent.Jobs)
 local PlayerData = require(script.Parent.PlayerData)
 local Pricing = require(script.Parent.Pricing)
 local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
+local Tugger = require(script.Parent.Tugger)
 local notify = require(script.Parent.Notify)
 
 local effectEvent = ReplicatedStorage.Remotes.Effect
 
 local PUSH_DISTANCE = 4.4 -- насколько тара впереди игрока
 local INTERACT_DISTANCE = 10
-local SLOT_SIZE = Vector2.new(3.6, 5.6) -- место под одну тару на зоне буфера
 -- Сколько тар держит зона. Лишние детали тормозят игру, поэтому самая старая тара уступает место.
 local GOODS_BUFFER_MAX = 6
 local WASTE_BUFFER_MAX = 12
@@ -36,11 +38,6 @@ local K2_EMPTY_MAX = 16
 local GOODS_BUFFER_MIN = 2 -- если на зоне товарного буфера тар меньше, её пополняет соседняя смена
 
 local Carts = {}
-
--- Тары, которые стоят сеткой на зонах буферов
-local grids: { [BasePart]: { [number]: State.Cart } } = {}
-local gridOrder: { [BasePart]: { State.Cart } } = {}
-local gridOf: { [State.Cart]: BasePart } = {}
 
 local newCart: () -> State.Cart
 
@@ -77,7 +74,7 @@ local function sharedSpotOf(cart: State.Cart): BasePart?
 end
 
 local function inGoodsBuffer(cart: State.Cart): boolean
-	local zone = gridOf[cart]
+	local zone = Grids.zoneOf(cart)
 	return zone ~= nil and CollectionService:HasTag(zone, "BufferZone")
 end
 
@@ -92,6 +89,13 @@ function Carts.refresh(cart: State.Cart)
 			else "Бросить картон"
 		cart.prompt.ObjectText = "Общая тара для картона"
 		cart.prompt.Enabled = true
+	elseif Hauling.get(cart) then
+		-- Тара ждёт вывоза: её цепляют карщики
+		cart.prompt.ActionText = "Прицепить к тягачу"
+		cart.prompt.ObjectText = if cart.kind == "cardboard"
+			then "Тара с картоном"
+			else "Пустая тара"
+		cart.prompt.Enabled = true
 	elseif inGoodsBuffer(cart) then
 		local category = cart.category
 		cart.prompt.ActionText = "Взять на раскладку"
@@ -100,72 +104,10 @@ function Carts.refresh(cart: State.Cart)
 	end
 end
 
--- Поставить тару сеткой на зону. Если места нет, самая старая тара уезжает.
+-- Поставить тару сеткой на зону буфера (если места нет, самая старая тара уезжает)
 local function placeInGrid(cart: State.Cart, zone: BasePart, maxCarts: number)
-	local columns = math.max(1, math.floor(zone.Size.X / SLOT_SIZE.X))
-	local rows = math.max(1, math.floor(zone.Size.Z / SLOT_SIZE.Y))
-	local capacity = math.min(columns * rows, maxCarts)
-
-	local grid = grids[zone] or {}
-	grids[zone] = grid
-	local order = gridOrder[zone] or {}
-	gridOrder[zone] = order
-
-	local index: number? = nil
-	for candidate = 0, capacity - 1 do
-		if not grid[candidate] then
-			index = candidate
-			break
-		end
-	end
-	if not index then
-		local oldest = table.remove(order, 1)
-		if oldest then
-			for slot, parked in grid do
-				if parked == oldest then
-					index = slot
-					grid[slot] = nil
-				end
-			end
-			gridOf[oldest] = nil
-			oldest.model:Destroy()
-		end
-	end
-	local slot = index or 0
-
-	grid[slot] = cart
-	gridOf[cart] = zone
-	table.insert(order, cart)
-
-	local x = -zone.Size.X / 2 + SLOT_SIZE.X * (slot % columns + 0.5)
-	local z = -zone.Size.Z / 2 + SLOT_SIZE.Y * (math.floor(slot / columns) + 0.5)
-	cart.model:PivotTo(zone.CFrame * CFrame.new(x, zone.Size.Y / 2, z))
-	cart.model.Parent = State.folder("BufferCarts")
+	Grids.place(cart, zone, maxCarts)
 	Carts.refresh(cart)
-end
-
-local function removeFromGrid(cart: State.Cart)
-	local zone = gridOf[cart]
-	if not zone then
-		return
-	end
-	gridOf[cart] = nil
-	local grid = grids[zone]
-	for slot, parked in grid do
-		if parked == cart then
-			grid[slot] = nil
-		end
-	end
-	local order = gridOrder[zone]
-	local position = table.find(order, cart)
-	if position then
-		table.remove(order, position)
-	end
-end
-
-local function countInGrid(zone: BasePart): number
-	local order = gridOrder[zone]
-	return if order then #order else 0
 end
 
 local function spotOf(workTable: State.WorkTable, cart: State.Cart): number?
@@ -382,8 +324,8 @@ local function onGoodsBufferCart(player: Player, cart: State.Cart)
 		return
 	end
 
-	local zone = gridOf[cart]
-	removeFromGrid(cart)
+	local zone = Grids.zoneOf(cart)
+	Grids.remove(cart)
 	if push(player, cart) then
 		Jobs.startPutaway(player, cart)
 		Tasks.refresh(player)
@@ -396,6 +338,8 @@ local function onCartPrompt(player: Player, cart: State.Cart)
 	local spot = sharedSpotOf(cart)
 	if spot then
 		onSharedCart(player, cart, spot)
+	elseif Hauling.get(cart) then
+		Tugger.hitch(player, cart)
 	elseif inGoodsBuffer(cart) then
 		onGoodsBufferCart(player, cart)
 	else
@@ -616,6 +560,9 @@ local function onWasteBuffer(player: Player, zone: BasePart)
 		end
 		stopPushing(player, cart)
 		placeInGrid(cart, zone, WASTE_BUFFER_MAX)
+		-- Отсюда тару с картоном увезёт на утилизацию карщик (или NPC)
+		Hauling.add(cart, "cardboard")
+		Carts.refresh(cart)
 		notify(
 			player,
 			`Тара с картоном сдана в буфер мусора: {cart.count} шт.`,
@@ -679,9 +626,15 @@ local function onK2Empty(player: Player, zone: BasePart)
 		Jobs.finish(player)
 		cart.kind = nil
 		cart.title = nil
-		cart.prompt.Enabled = false
 		placeInGrid(cart, zone, K2_EMPTY_MAX)
-		notify(player, "Пустая тара оставлена в зоне мезонина", "info")
+		-- Отсюда пустую тару отвезёт в буфер пустых тар К4 карщик (или NPC)
+		Hauling.add(cart, "empty")
+		Carts.refresh(cart)
+		notify(
+			player,
+			"Пустая тара оставлена в зоне мезонина: её заберёт карщик",
+			"info"
+		)
 		Tasks.refresh(player)
 		return
 	end
@@ -803,7 +756,7 @@ local function refillGoodsBuffers()
 	for _, zone in CollectionService:GetTagged("BufferZone") do
 		local category = categoryById(zone:GetAttribute("Category"))
 		if zone:IsA("BasePart") and category then
-			while countInGrid(zone) < GOODS_BUFFER_MIN do
+			while Grids.count(zone) < GOODS_BUFFER_MIN do
 				placeInGrid(generateGoodsCart(category), zone, GOODS_BUFFER_MAX)
 			end
 		end

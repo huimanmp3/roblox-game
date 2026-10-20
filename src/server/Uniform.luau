@@ -19,6 +19,7 @@ local UNIFORM_GROUP = "Uniformed"
 local K2_GROUP = "UniformedK2"
 local GATE_GROUP = "SecurityGate"
 local K2_GATE_GROUP = "K2Gate"
+local TUGGER_GROUP = "Tugger" -- корпус тягача (см. TuggerModel)
 local LOCKER_DISTANCE = 8
 local GATE_MESSAGE_COOLDOWN = 3
 
@@ -186,7 +187,7 @@ local function onPlayerAdded(player: Player)
 end
 
 local function registerGroups()
-	for _, group in { UNIFORM_GROUP, K2_GROUP, GATE_GROUP, K2_GATE_GROUP } do
+	for _, group in { UNIFORM_GROUP, K2_GROUP, GATE_GROUP, K2_GATE_GROUP, TUGGER_GROUP } do
 		if not PhysicsService:IsCollisionGroupRegistered(group) then
 			PhysicsService:RegisterCollisionGroup(group)
 		end
@@ -194,6 +195,8 @@ local function registerGroups()
 	PhysicsService:CollisionGroupSetCollidable(UNIFORM_GROUP, GATE_GROUP, false)
 	PhysicsService:CollisionGroupSetCollidable(K2_GROUP, GATE_GROUP, false)
 	PhysicsService:CollisionGroupSetCollidable(K2_GROUP, K2_GATE_GROUP, false)
+	-- Ворота для техники пропускают тягачи
+	PhysicsService:CollisionGroupSetCollidable(TUGGER_GROUP, K2_GATE_GROUP, false)
 end
 
 function Uniform.start()

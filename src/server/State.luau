@@ -77,6 +77,17 @@ export type Job = {
 	lines: { OrderLine },
 }
 
+-- Тягач карщика с «паровозом» из тар
+export type Tugger = {
+	model: Model,
+	chassis: BasePart,
+	seat: VehicleSeat,
+	owner: Player,
+	carts: { Cart }, -- прицепленные тары по порядку от тягача
+	kind: string?, -- что везёт паровоз: "cardboard" или "empty"
+	idleSince: number?, -- с какого момента в тягаче никто не сидит
+}
+
 export type HeldItem = {
 	item: ItemType,
 	category: Category,
@@ -119,6 +130,7 @@ export type Session = {
 	cardboard: BasePart?,
 	held: HeldItem?,
 	job: Job?, -- задание на мезонине
+	tugger: Tugger?, -- тягач, если игрок работает карщиком
 	lastScan: number,
 }
 
@@ -144,6 +156,7 @@ function State.session(player: Player): Session
 		cardboard = nil,
 		held = nil,
 		job = nil,
+		tugger = nil,
 		lastScan = 0,
 	}
 	-- Для игрока, который уже вышел, данные не сохраняем

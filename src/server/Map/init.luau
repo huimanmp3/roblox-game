@@ -5,6 +5,7 @@
 
 local Equipment = require(script.Equipment)
 local LockerRoom = require(script.LockerRoom)
+local Logistics = require(script.Logistics)
 local Mezzanine = require(script.Mezzanine)
 local Receiving = require(script.Receiving)
 local Security = require(script.Security)
@@ -25,6 +26,7 @@ function Map.build()
 	Receiving.build(map)
 	Equipment.build(map)
 	Mezzanine.build(map)
+	Logistics.build(map)
 	map.Parent = workspace
 end
 

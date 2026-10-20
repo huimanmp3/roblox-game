@@ -4,7 +4,10 @@
 -- Текст уходит клиенту в атрибут Task, цель стрелки — в ObjectValue GuideTarget.
 
 local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Config = require(ReplicatedStorage.Shared.Config)
+local Hauling = require(script.Parent.Hauling)
 local Pallets = require(script.Parent.Pallets)
 local Pricing = require(script.Parent.Pricing)
 local Rating = require(script.Parent.Rating)
@@ -108,6 +111,42 @@ local function describeNoCardboardTarget(workTable: State.WorkTable): (string, B
 	return text, nearestTagged("CartParking", workTable.desk.Position), "Пустые тары"
 end
 
+-- Карщик на тягаче: что цеплять и куда везти
+local function describeTugger(tugger: State.Tugger): (string, BasePart?, string)
+	if tugger.seat.Occupant == nil then
+		return "Сядь в тягач (E у тягача) или сдай его на стоянке тягачей",
+			tugger.chassis,
+			"Тягач"
+	end
+
+	local count = #tugger.carts
+	local max = Config.Tugger.MaxCarts
+	if count > 0 then
+		local drop = Hauling.dropPoint(tugger.kind or "")
+		if tugger.kind == "cardboard" then
+			local text =
+				`Паровоз с картоном ({count}/{max}): вези на утилизацию в К2 через ворота для техники и сдай (E)`
+			return text, drop, "Утилизация"
+		end
+		local text =
+			`Паровоз пустых тар ({count}/{max}): вези в приём пустых тар у буфера К4 и сдай (E)`
+		return text, drop, "Приём пустых тар"
+	end
+
+	local cardboard, empty = Hauling.counts()
+	if cardboard == 0 and empty == 0 then
+		return "Сейчас вывозить нечего. Подожди или сдай тягач на стоянке",
+			nil,
+			""
+	end
+	local text =
+		`Ждут вывоза: картон — {cardboard} (буфер мусора К4), пустые тары — {empty} (зона мезонина). Подъезжай и цепляй (E у тары)`
+	if cardboard >= empty then
+		return text, firstTagged("WasteBuffer"), "Буфер мусора"
+	end
+	return text, firstTagged("K2EmptyCarts"), "Пустые тары мезонина"
+end
+
 -- Задание на мезонине: раскладка или сборка
 local function describeJob(job: State.Job): (string, BasePart?, string)
 	if job.kind == "putaway" then
@@ -166,6 +205,10 @@ local function describe(player: Player, session: State.Session): (string, BasePa
 	local job = session.job
 	if job then
 		return describeJob(job)
+	end
+	local tugger = session.tugger
+	if tugger then
+		return describeTugger(tugger)
 	end
 
 	local workTable = session.workTable
