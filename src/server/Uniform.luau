@@ -74,7 +74,8 @@ local function applyUniform(humanoid: Humanoid)
 	humanoid:ApplyDescription(description)
 end
 
-local function dressUp(player: Player)
+-- Надеть форму (у шкафчика или из админ-панели)
+function Uniform.dressUp(player: Player)
 	local session = State.session(player)
 	if session.uniform then
 		notify(player, "Ты уже в форме. Иди через пост охраны на склад", "info")
@@ -224,7 +225,7 @@ function Uniform.start()
 			prompt.Parent = locker
 			prompt.Triggered:Connect(function(player)
 				if State.isNear(player, locker, LOCKER_DISTANCE) then
-					dressUp(player)
+					Uniform.dressUp(player)
 				end
 			end)
 		end

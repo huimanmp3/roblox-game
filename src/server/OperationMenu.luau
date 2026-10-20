@@ -5,6 +5,8 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Boxes = require(script.Parent.Boxes)
+local Carts = require(script.Parent.Carts)
 local Operations = require(ReplicatedStorage.Shared.Operations)
 local PlayerData = require(script.Parent.PlayerData)
 local State = require(script.Parent.State)
@@ -57,6 +59,21 @@ local function choose(player: Player, id: unknown)
 	session.operation = operation.Id
 	player:SetAttribute("Operation", operation.Id)
 	notify(player, `Операция: {operation.Name}`, "success")
+	Tasks.refresh(player)
+end
+
+-- Снять игрока с операции: всё из рук убирается, стол освобождается, тягач уезжает
+function OperationMenu.reset(player: Player)
+	local session = State.sessions[player]
+	if not session then
+		return
+	end
+	Carts.dropPushed(player, false)
+	Boxes.dropAll(player)
+	Tugger.dismiss(player, true)
+	Tables.releaseTable(player)
+	session.operation = nil
+	player:SetAttribute("Operation", nil)
 	Tasks.refresh(player)
 end
 

@@ -68,6 +68,15 @@ function Hauling.release(cart: State.Cart, immediately: boolean)
 	end
 end
 
+-- Все тары, которые ждут вывоза, NPC заберёт при ближайшей проверке
+function Hauling.hurry()
+	for _, entry in waiting do
+		if not entry.claimedBy then
+			entry.since = -math.huge
+		end
+	end
+end
+
 -- Подписка на тары, которые карщик не довёз вовремя
 function Hauling.onTimeout(listener: (Player, { State.Cart }) -> ())
 	table.insert(timeoutListeners, listener)

@@ -19,6 +19,9 @@
         },
         "ChooseOperation": {
           "$className": "RemoteEvent"
+        },
+        "Admin": {
+          "$className": "RemoteEvent"
         }
       }
     },

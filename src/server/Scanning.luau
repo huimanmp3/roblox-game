@@ -61,7 +61,8 @@ local function createScannerTool(): Tool
 	return tool
 end
 
-local function giveScanner(player: Player)
+-- Выдать ТСД (у компьютера в зоне оборудования или из админ-панели)
+function Scanning.giveScanner(player: Player)
 	if not State.session(player).uniform then
 		notify(player, "Сначала переоденься в форму", "error")
 		return
@@ -223,7 +224,7 @@ function Scanning.start()
 			prompt.Parent = desk
 			prompt.Triggered:Connect(function(player)
 				if State.isNear(player, desk, DESK_DISTANCE) then
-					giveScanner(player)
+					Scanning.giveScanner(player)
 				end
 			end)
 		end

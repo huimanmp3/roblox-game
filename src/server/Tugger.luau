@@ -325,12 +325,13 @@ local function addZonePrompt(
 end
 
 -- Игрок сменил операцию: пустой тягач уезжает на стоянку. false — если за ним ещё паровоз.
-function Tugger.dismiss(player: Player): boolean
+-- force — убрать тягач и с паровозом (тары отцепятся, их довезёт NPC).
+function Tugger.dismiss(player: Player, force: boolean?): boolean
 	local tugger = tuggers[player]
 	if not tugger then
 		return true
 	end
-	if #tugger.carts > 0 then
+	if #tugger.carts > 0 and not force then
 		return false
 	end
 	despawn(tugger)

@@ -46,7 +46,8 @@ function Pricing.onChanged(listener: () -> ())
 	table.insert(listeners, listener)
 end
 
-local function drift()
+-- Сдвинуть цены прямо сейчас (по таймеру или из админ-панели)
+function Pricing.drift()
 	local settings = Config.PriceDrift
 	previousAverage = Pricing.average()
 	for _, category in Config.Categories do
@@ -68,7 +69,7 @@ function Pricing.start()
 	task.spawn(function()
 		while true do
 			task.wait(Config.PriceDrift.Interval)
-			drift()
+			Pricing.drift()
 		end
 	end)
 end
