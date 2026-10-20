@@ -1,10 +1,12 @@
 --!strict
--- Внешний вид товара: фигура нужной формы, размера и цвета из Config (ItemType.Look).
--- Если у товара задана картинка, она клеится на переднюю и заднюю стороны.
+-- Внешний вид товара: фигура нужной формы, размера и цвета из Config (ItemType.Look),
+-- материал и подробности из ItemModels. Если у товара задана картинка, она клеится
+-- на переднюю и заднюю стороны.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local ItemModels = require(script.Parent.ItemModels)
 
 local Items = {}
 
@@ -19,8 +21,11 @@ function Items.categoryOf(item: Config.ItemType): Config.Category
 	return categoryByItem[item]
 end
 
--- maxSize: товар уменьшается, чтобы самая длинная сторона была не больше этого
-function Items.create(item: Config.ItemType, maxSize: number?): Part
+-- maxSize: товар уменьшается, чтобы самая длинная сторона была не больше этого.
+-- detailed: подробный вид с деталями и этикеткой (в руке и на полке); без него — только форма
+-- и материал (для тар, где товара много). Детали лежат внутри корня, поэтому подробный товар
+-- переставляют через PivotTo: он двигает корень вместе с деталями.
+function Items.create(item: Config.ItemType, maxSize: number?, detailed: boolean?): Part
 	local look = item.Look
 	local dims = look.Dims
 	local scale = 1
@@ -52,6 +57,8 @@ function Items.create(item: Config.ItemType, maxSize: number?): Part
 		part.Size = size
 	end
 
+	ItemModels.decorate(item.Name, part, size, Items.uprightRotation(item), detailed == true)
+
 	if look.Image ~= "" then
 		for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
 			local decal = Instance.new("Decal")
@@ -62,6 +69,11 @@ function Items.create(item: Config.ItemType, maxSize: number?): Part
 	end
 
 	return part
+end
+
+-- Высота товара в положении «стоя»: у бутылок это длина цилиндра (ось X)
+function Items.uprightHeight(item: Config.ItemType, part: BasePart): number
+	return if item.Look.Shape == "Cylinder" then part.Size.X else part.Size.Y
 end
 
 -- Как товар стоит: бутылки вертикально, остальное как есть

@@ -46,11 +46,13 @@ local function decorate(cell: State.Cell)
 	label.Text = `{cell.address}  {cell.item.Name}`
 	label.Parent = gui
 
-	local figure = Items.create(cell.item, VISUAL_SIZE)
+	local figure = Items.create(cell.item, VISUAL_SIZE, true)
 	figure.Anchored = true
-	figure.CFrame = cell.part.CFrame
-		* CFrame.new(0, cell.part.Size.Y / 2 + figure.Size.Y / 2, 0)
-		* Items.uprightRotation(cell.item)
+	figure:PivotTo(
+		cell.part.CFrame
+			* CFrame.new(0, cell.part.Size.Y / 2 + Items.uprightHeight(cell.item, figure) / 2, 0)
+			* Items.uprightRotation(cell.item)
+	)
 	figure.Parent = cell.part
 end
 

@@ -212,7 +212,7 @@ function Boxes.click(player: Player, workTable: State.WorkTable)
 		return
 	end
 
-	local itemPart = Items.create(box.item)
+	local itemPart = Items.create(box.item, nil, true)
 	itemPart.CanQuery = false
 	if not Carry.attach(itemPart, character, HELD_OFFSET * Items.uprightRotation(box.item)) then
 		itemPart:Destroy()
