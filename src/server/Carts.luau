@@ -14,6 +14,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Items = require(script.Parent.Items)
 local PlayerData = require(script.Parent.PlayerData)
 local Pricing = require(script.Parent.Pricing)
+local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
 local notify = require(script.Parent.Notify)
@@ -499,12 +500,14 @@ function Carts.putItem(player: Player, cart: State.Cart)
 		return
 	end
 
-	local price = Pricing.price(held.item)
+	-- Цена пика с надбавкой за качество работы
+	local price = math.round(Pricing.price(held.item) * Rating.payMultiplier(player))
 	local cartCategory = cart.category
+	local correct = cartCategory == nil or cartCategory == held.category
 	if not cartCategory then
 		cart.kind = "goods"
 		cart.category = held.category
-	elseif cartCategory ~= held.category then
+	elseif not correct then
 		table.insert(cart.wrongPrices, price)
 		notify(
 			player,
@@ -526,6 +529,7 @@ function Carts.putItem(player: Player, cart: State.Cart)
 	session.held = nil
 
 	PlayerData.addKopecks(player, price)
+	Rating.recordPick(player, correct)
 	local workTable = session.workTable
 	if workTable then
 		workTable.picks += 1
@@ -646,9 +650,11 @@ local function deliverGoods(player: Player, zone: BasePart)
 	placeInBuffer(cart.model, zone, GOODS_BUFFER_MAX)
 	notify(player, `Тара сдана на буфер «{category.Name}»: {cart.count} шт.`, "success")
 
+	Rating.addPoints(player, Config.Rating.Points.CartDelivered)
 	local wrong = #cart.wrongPrices
 	if caught > 0 then
 		PlayerData.addKopecks(player, -fine)
+		Rating.addPoints(player, Config.Rating.Points.MixCaught * caught)
 		notify(
 			player,
 			`Штраф за пересорт: {caught} шт. не той категории, −{PlayerData.format(
@@ -687,6 +693,7 @@ local function onWasteBuffer(player: Player, zone: BasePart)
 			`Тара с картоном сдана в буфер мусора: {cart.count} шт.`,
 			"success"
 		)
+		Rating.addPoints(player, Config.Rating.Points.CardboardDelivered)
 		Tasks.refresh(player)
 		return
 	end

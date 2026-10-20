@@ -1,7 +1,11 @@
 --!strict
--- Здание склада: пол, стены, центральный проход и закрытый блок К2 со стеллажами.
+-- Здание склада: пол, стены, центральный проход и блок К2 со стеллажами.
+-- В К2 ведёт проход с турникетом: он пропускает игроков с рейтингом из Config.Rating.K2Access.
 -- Начинка блока К4 (приёмка) строится в Map/Receiving.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
 local Parts = require(script.Parent.Parts)
 
 local F = Parts.FLOOR
@@ -11,6 +15,7 @@ local MIN_Z, MAX_Z = -100, 200
 local HEIGHT = 30
 local ENTRANCE_HALF_WIDTH = 12
 local AISLE_HALF_WIDTH = 10 -- центральный проход между блоками К2 и К4
+local GATE_MIN_Z, GATE_MAX_Z = -85, -73 -- проход с турникетом в блок К2, недалеко от входа
 
 local FLOOR_COLOR = Color3.fromRGB(145, 145, 150)
 local WALL_COLOR = Color3.fromRGB(215, 215, 220)
@@ -111,19 +116,58 @@ end
 
 local function buildBlockK2(model: Model)
 	local fenceX = -AISLE_HALF_WIDTH
+	local fenceTop = F + 10
 	Parts.box(
 		"K2Fence",
 		Vector3.new(fenceX - 1, F, MIN_Z),
-		Vector3.new(fenceX, F + 10, MAX_Z),
+		Vector3.new(fenceX, fenceTop, GATE_MIN_Z),
 		FENCE_COLOR,
 		Enum.Material.DiamondPlate,
 		model
 	)
-	for _, z in { -60, 20, 100, 170 } do
-		local cframe = CFrame.new(fenceX + 0.2, F + 7, z) * CFrame.Angles(0, math.pi / 2, 0)
+	Parts.box(
+		"K2Fence",
+		Vector3.new(fenceX - 1, F, GATE_MAX_Z),
+		Vector3.new(fenceX, fenceTop, MAX_Z),
+		FENCE_COLOR,
+		Enum.Material.DiamondPlate,
+		model
+	)
+
+	-- Турникет в К2: стойки и прозрачный барьер, который пропускает игроков с нужным рейтингом
+	local gateZ = (GATE_MIN_Z + GATE_MAX_Z) / 2
+	for _, z in { GATE_MIN_Z + 0.4, gateZ, GATE_MAX_Z - 0.4 } do
+		Parts.part({
+			Name = "TurnstilePost",
+			Size = Vector3.new(1.2, 3.4, 0.6),
+			CFrame = CFrame.new(fenceX - 0.5, F + 1.7, z),
+			Color = Color3.fromRGB(150, 150, 155),
+			Material = Enum.Material.Metal,
+		}, model)
+	end
+	local gate = Parts.part({
+		Name = "K2Gate",
+		Size = Vector3.new(0.4, 9, GATE_MAX_Z - GATE_MIN_Z),
+		CFrame = CFrame.new(fenceX - 0.5, F + 4.5, gateZ),
+		Color = Color3.fromRGB(255, 90, 90),
+		Material = Enum.Material.Glass,
+		Transparency = 0.75,
+		CanQuery = false,
+	}, model)
+	Parts.tag(gate, "K2Gate")
+
+	local facingAisle = CFrame.Angles(0, math.pi / 2, 0)
+	Parts.sign(
+		`БЛОК К2 · МЕЗОНИН · вход с рейтинга {Config.Rating.K2Access}`,
+		CFrame.new(fenceX + 0.2, F + 12, gateZ) * facingAisle,
+		Vector3.new(30, 3, 0.3),
+		Parts.BRAND,
+		model
+	)
+	for _, z in { 20, 100, 170 } do
 		Parts.sign(
-			"БЛОК К2 · ЗАКРЫТ",
-			cframe,
+			"БЛОК К2 · МЕЗОНИН (строится)",
+			CFrame.new(fenceX + 0.2, F + 7, z) * facingAisle,
 			Vector3.new(26, 3.5, 0.3),
 			Color3.fromRGB(110, 110, 120),
 			model

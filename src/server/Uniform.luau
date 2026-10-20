@@ -1,6 +1,7 @@
 --!strict
--- Раздевалка и пост охраны: игрок переодевается в форму, без формы охрана не пускает на склад.
--- Барьер на посту не сталкивается только с персонажами в группе столкновений Uniformed.
+-- Раздевалка, пост охраны и турникет в блок К2.
+-- Барьеры работают через группы столкновений: персонаж в форме попадает в группу Uniformed
+-- (проходит пост охраны), а с рейтингом для К2 — в UniformedK2 (проходит и турникет К2).
 
 local CollectionService = game:GetService("CollectionService")
 local PhysicsService = game:GetService("PhysicsService")
@@ -8,12 +9,16 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local PlayerData = require(script.Parent.PlayerData)
+local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
 local Tasks = require(script.Parent.Tasks)
 local notify = require(script.Parent.Notify)
 
 local UNIFORM_GROUP = "Uniformed"
+local K2_GROUP = "UniformedK2"
 local GATE_GROUP = "SecurityGate"
+local K2_GATE_GROUP = "K2Gate"
 local LOCKER_DISTANCE = 8
 local GATE_MESSAGE_COOLDOWN = 3
 
@@ -21,8 +26,22 @@ local Uniform = {}
 
 local changing: { [Player]: boolean } = {}
 local lastGateMessage: { [Player]: number } = {}
+local lastAccess: { [Player]: boolean } = {}
 
-local function setCollisionGroup(character: Model, group: string)
+-- В какой группе столкновений должен быть персонаж игрока
+local function groupFor(player: Player): string
+	if not State.session(player).uniform then
+		return "Default"
+	end
+	return if Rating.hasK2Access(player) then K2_GROUP else UNIFORM_GROUP
+end
+
+function Uniform.refreshCollision(player: Player)
+	local character = player.Character
+	if not character then
+		return
+	end
+	local group = groupFor(player)
 	for _, descendant in character:GetDescendants() do
 		if descendant:IsA("BasePart") then
 			descendant.CollisionGroup = group
@@ -84,7 +103,7 @@ local function dressUp(player: Player)
 	end
 
 	session.uniform = true
-	setCollisionGroup(character, UNIFORM_GROUP)
+	Uniform.refreshCollision(player)
 	notify(
 		player,
 		"Форма надета! Проходи через пост охраны на склад",
@@ -93,12 +112,14 @@ local function dressUp(player: Player)
 	Tasks.refresh(player)
 end
 
-local function setupGate(gate: BasePart)
-	gate.CollisionGroup = GATE_GROUP
-	gate.Touched:Connect(function(hit)
+-- Барьер, который не пускает тех, кому туда нельзя. message возвращает текст или nil, если игроку можно.
+local function setupBarrier(barrier: BasePart, group: string, message: (Player) -> string?)
+	barrier.CollisionGroup = group
+	barrier.Touched:Connect(function(hit)
 		local character = hit:FindFirstAncestorOfClass("Model")
 		local player = if character then Players:GetPlayerFromCharacter(character) else nil
-		if not player or State.session(player).uniform then
+		local text = if player then message(player) else nil
+		if not player or not text then
 			return
 		end
 
@@ -107,12 +128,24 @@ local function setupGate(gate: BasePart)
 			return
 		end
 		lastGateMessage[player] = now
-		notify(
-			player,
-			"Охрана: без формы на склад нельзя! Переоденься в раздевалке",
-			"error"
-		)
+		notify(player, text, "error")
 	end)
+end
+
+local function securityMessage(player: Player): string?
+	if State.session(player).uniform then
+		return nil
+	end
+	return "Охрана: без формы на склад нельзя! Переоденься в раздевалке"
+end
+
+local function k2Message(player: Player): string?
+	if Rating.hasK2Access(player) then
+		return nil
+	end
+	local profile = PlayerData.get(player)
+	local rating = if profile then profile.rating else 0
+	return `В блок К2 пускают с рейтинга {Config.Rating.K2Access}. У тебя: {rating}`
 end
 
 -- Игроки должны появляться только в раздевалке
@@ -132,10 +165,10 @@ local function onCharacterAdded(player: Player, character: Model)
 	-- После возрождения игрок снова в своей одежде
 	State.session(player).uniform = false
 
-	-- Детали, которые появятся позже (аксессуары, инструменты), тоже должны проходить барьер
+	-- Детали, которые появятся позже (аксессуары, инструменты), получают ту же группу
 	character.DescendantAdded:Connect(function(descendant)
-		if descendant:IsA("BasePart") and State.session(player).uniform and player.Character == character then
-			descendant.CollisionGroup = UNIFORM_GROUP
+		if descendant:IsA("BasePart") and player.Character == character then
+			descendant.CollisionGroup = groupFor(player)
 		end
 	end)
 
@@ -152,17 +185,28 @@ local function onPlayerAdded(player: Player)
 	end
 end
 
-function Uniform.start()
-	for _, group in { UNIFORM_GROUP, GATE_GROUP } do
+local function registerGroups()
+	for _, group in { UNIFORM_GROUP, K2_GROUP, GATE_GROUP, K2_GATE_GROUP } do
 		if not PhysicsService:IsCollisionGroupRegistered(group) then
 			PhysicsService:RegisterCollisionGroup(group)
 		end
 	end
 	PhysicsService:CollisionGroupSetCollidable(UNIFORM_GROUP, GATE_GROUP, false)
+	PhysicsService:CollisionGroupSetCollidable(K2_GROUP, GATE_GROUP, false)
+	PhysicsService:CollisionGroupSetCollidable(K2_GROUP, K2_GATE_GROUP, false)
+end
+
+function Uniform.start()
+	registerGroups()
 
 	for _, gate in CollectionService:GetTagged("SecurityGate") do
 		if gate:IsA("BasePart") then
-			setupGate(gate)
+			setupBarrier(gate, GATE_GROUP, securityMessage)
+		end
+	end
+	for _, gate in CollectionService:GetTagged("K2Gate") do
+		if gate:IsA("BasePart") then
+			setupBarrier(gate, K2_GATE_GROUP, k2Message)
 		end
 	end
 
@@ -185,10 +229,21 @@ function Uniform.start()
 
 	setupSpawns()
 
+	-- Рейтинг дорос до К2 или данные загрузились уже с таким рейтингом: меняем группу,
+	-- чтобы турникет начал пропускать
+	PlayerData.onChanged(function(player)
+		local access = Rating.hasK2Access(player)
+		if lastAccess[player] ~= access then
+			lastAccess[player] = access
+			Uniform.refreshCollision(player)
+		end
+	end)
+
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	Players.PlayerRemoving:Connect(function(player)
 		changing[player] = nil
 		lastGateMessage[player] = nil
+		lastAccess[player] = nil
 	end)
 	for _, player in Players:GetPlayers() do
 		onPlayerAdded(player)

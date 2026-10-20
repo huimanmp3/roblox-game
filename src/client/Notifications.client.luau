@@ -10,7 +10,7 @@ local notifyEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Noti
 local SHOW_TIME = 3
 local FADE_TIME = 0.5
 local MAX_VISIBLE = 4
-local TOP_OFFSET = 140 -- ниже панели с заданием
+local TOP_OFFSET = 170 -- ниже панели с рейтингом и заданием
 
 local TEXT_COLORS: { [string]: Color3 } = {
 	success = Color3.fromRGB(46, 204, 113),
