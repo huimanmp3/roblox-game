@@ -7,6 +7,7 @@ local CollectionService = game:GetService("CollectionService")
 
 local Pallets = require(script.Parent.Pallets)
 local Pricing = require(script.Parent.Pricing)
+local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
 
 local Tasks = {}
@@ -107,6 +108,47 @@ local function describeNoCardboardTarget(workTable: State.WorkTable): (string, B
 	return text, nearestTagged("CartParking", workTable.desk.Position), "Пустые тары"
 end
 
+-- Задание на мезонине: раскладка или сборка
+local function describeJob(job: State.Job): (string, BasePart?, string)
+	if job.kind == "putaway" then
+		local target = job.target
+		local item = job.targetItem
+		if target and item then
+			local inCart = job.cart.contents[item] or 0
+			local text =
+				`Раскладка: {item.Name} ×{inCart} → ячейка {target.address} ({target.floor} этаж). Кликни по ней ТСД`
+			return text, target.part, `Ячейка {target.address}`
+		end
+		if job.cart.count > 0 then
+			return "Свободных ячеек для товара из тары нет. Подожди, пока сборщики освободят место",
+				nil,
+				""
+		end
+		return "Тара пустая: верни её в зону пустых тар мезонина",
+			firstTagged("K2EmptyCarts"),
+			"Пустые тары"
+	end
+
+	local done = 0
+	local nextLine: State.OrderLine? = nil
+	for _, line in job.lines do
+		if line.picked then
+			done += 1
+		elseif not nextLine then
+			nextLine = line
+		end
+	end
+	if nextLine then
+		local cell = nextLine.cell
+		local text =
+			`Заказ №{job.orderNumber} ({done}/{#job.lines}): {nextLine.item.Name} ×{nextLine.qty} → ячейка {cell.address} ({cell.floor} этаж)`
+		return text, cell.part, `Ячейка {cell.address}`
+	end
+	return `Заказ №{job.orderNumber} собран: отвези его в зону отгрузки`,
+		firstTagged("ShippingZone"),
+		"Отгрузка"
+end
+
 -- Возвращает текст задания, цель стрелки и подпись над целью
 local function describe(player: Player, session: State.Session): (string, BasePart?, string)
 	if not session.uniform then
@@ -121,8 +163,18 @@ local function describe(player: Player, session: State.Session): (string, BasePa
 			"Выдача ТСД"
 	end
 
+	local job = session.job
+	if job then
+		return describeJob(job)
+	end
+
 	local workTable = session.workTable
 	if not workTable then
+		if Rating.hasK2Access(player) then
+			local text =
+				"Получи стол у старших в К4 или иди на мезонин в К2: раскладка — тара с товарного буфера, сборка — зона пустых тар мезонина"
+			return text, firstTagged("SeniorDesk"), "Стол старших"
+		end
 		return "Получи стол у старших в блоке К4",
 			firstTagged("SeniorDesk"),
 			"Стол старших"
@@ -186,7 +238,7 @@ function Tasks.updatePrompts(workTable: State.WorkTable)
 	local deskAction: string? = nil
 	if session and not workTable.occupied then
 		deskAction = "Занять стол"
-	elseif session and session.cart and State.freeCartSpot(workTable) then
+	elseif session and session.cart and not session.job and State.freeCartSpot(workTable) then
 		deskAction = "Поставить тару"
 	end
 	if deskAction then

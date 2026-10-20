@@ -10,6 +10,8 @@ local Boxes = require(script.Parent.Boxes)
 local Carts = require(script.Parent.Carts)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Forklift = require(script.Parent.Forklift)
+local Jobs = require(script.Parent.Jobs)
+local Mezzanine = require(script.Parent.Mezzanine)
 local Pallets = require(script.Parent.Pallets)
 local Rating = require(script.Parent.Rating)
 local State = require(script.Parent.State)
@@ -20,6 +22,7 @@ local scanEvent = ReplicatedStorage.Remotes.Scan
 
 local SCAN_DISTANCE = 20 -- как далеко от своего стола можно кликать ТСД
 local DESK_DISTANCE = 10 -- как близко подойти к столу выдачи оборудования
+local CELL_DISTANCE = 12 -- как далеко можно кликать по ячейке мезонина
 local EMPTY_PALLET_LIFETIME = 2 -- сколько секунд пустой поддон стоит у стола
 
 local Scanning = {}
@@ -165,6 +168,17 @@ local function onScan(player: Player, target: unknown)
 		return
 	end
 	session.lastScan = now
+
+	-- Ячейка мезонина: раскладка или сборка
+	local cell = Mezzanine.cellOf(target)
+	if cell then
+		if State.isNear(player, cell.part, CELL_DISTANCE) then
+			Jobs.clickCell(player, cell)
+		else
+			notify(player, "Подойди ближе к ячейке", "error")
+		end
+		return
+	end
 
 	local workTable = session.workTable
 	if not workTable or not workTable.occupied then

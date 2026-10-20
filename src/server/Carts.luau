@@ -1,17 +1,22 @@
 --!strict
--- Тары (тележки на колёсах). Пустые берут в буфере пустых тар. Тара становится товарной
--- или картонной в зависимости от того, что в неё положили первым.
--- Товарную везут на буфер своей категории, картонную — в буфер мусора.
--- В начале каждого ряда стоит общая тара для картона, но можно поставить и свою у стола.
+-- Тары (тележки на колёсах): кто и куда их возит. Как тара выглядит — в CartModel.
+--
+-- Приёмка (К4): пустые тары берут в буфере пустых тар. Назначение тары (товар или картон)
+-- задаёт первое, что в неё положили. Товарную везут на товарный буфер своей категории,
+-- картонную — в буфер мусора. В начале каждого ряда стоит общая тара для картона,
+-- можно поставить и свою у стола.
+-- Мезонин (К2): с товарного буфера тару берут на раскладку, в зоне пустых тар мезонина — на сборку,
+-- собранный заказ сдают в зоне отгрузки.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 
 local Boards = require(script.Parent.Boards)
+local CartModel = require(script.Parent.CartModel)
 local Carry = require(script.Parent.Carry)
 local Config = require(ReplicatedStorage.Shared.Config)
-local Items = require(script.Parent.Items)
+local Jobs = require(script.Parent.Jobs)
 local PlayerData = require(script.Parent.PlayerData)
 local Pricing = require(script.Parent.Pricing)
 local Rating = require(script.Parent.Rating)
@@ -21,35 +26,23 @@ local notify = require(script.Parent.Notify)
 
 local effectEvent = ReplicatedStorage.Remotes.Effect
 
-local WIDTH, LENGTH = 3, 5
-local BOTTOM = 0.8 -- высота дна над полом: под ним колёса
-local FLOOR_THICKNESS = 0.2
-local WALL_HEIGHT = 3.2
-local WALL_THICKNESS = 0.15
-local METAL_COLOR = Color3.fromRGB(150, 155, 160)
-local DARK_COLOR = Color3.fromRGB(45, 45, 50)
-local CARDBOARD_COLOR = Color3.fromRGB(196, 154, 108)
 local PUSH_DISTANCE = 4.4 -- насколько тара впереди игрока
 local INTERACT_DISTANCE = 10
-local SLOT_SIZE = Vector2.new(3.6, 5.6) -- место под одну тару на буфере
-local GOODS_BUFFER_MAX = 6 -- сколько тар хранится на зоне товарного буфера
-local WASTE_BUFFER_MAX = 12 -- и в буфере мусора: лишние детали тормозят игру
-
--- Товар внутри: сетка 3 × 5 × 4. Одна фигурка — примерно CartCapacity / 60 штук товара.
-local SLOT_COLUMNS, SLOT_ROWS, SLOT_LAYERS = 3, 5, 4
-local SLOT_COUNT = SLOT_COLUMNS * SLOT_ROWS * SLOT_LAYERS
-local INNER_WIDTH = WIDTH - 2 * WALL_THICKNESS
-local INNER_LENGTH = LENGTH - 2 * WALL_THICKNESS
-local ITEM_SLOT = Vector3.new(INNER_WIDTH / SLOT_COLUMNS, WALL_HEIGHT / SLOT_LAYERS, INNER_LENGTH / SLOT_ROWS)
-local SHEET_THICKNESS = WALL_HEIGHT / Config.CardboardPerCart -- лист картона в стопке
+local SLOT_SIZE = Vector2.new(3.6, 5.6) -- место под одну тару на зоне буфера
+-- Сколько тар держит зона. Лишние детали тормозят игру, поэтому самая старая тара уступает место.
+local GOODS_BUFFER_MAX = 6
+local WASTE_BUFFER_MAX = 12
+local K2_EMPTY_MAX = 16
+local GOODS_BUFFER_MIN = 2 -- если на зоне товарного буфера тар меньше, её пополняет соседняя смена
 
 local Carts = {}
 
-type BufferState = {
-	placed: number,
-	slots: { [number]: Model },
-}
-local buffers: { [BasePart]: BufferState } = {}
+-- Тары, которые стоят сеткой на зонах буферов
+local grids: { [BasePart]: { [number]: State.Cart } } = {}
+local gridOrder: { [BasePart]: { State.Cart } } = {}
+local gridOf: { [State.Cart]: BasePart } = {}
+
+local newCart: () -> State.Cart
 
 local function categoryName(id: unknown): string
 	for _, category in Config.Categories do
@@ -58,6 +51,15 @@ local function categoryName(id: unknown): string
 		end
 	end
 	return "?"
+end
+
+local function categoryById(id: unknown): Config.Category?
+	for _, category in Config.Categories do
+		if category.Id == id then
+			return category
+		end
+	end
+	return nil
 end
 
 -- Подсказка «до» зоны: зона большая, поэтому считаем от её центра до края с запасом
@@ -74,14 +76,13 @@ local function sharedSpotOf(cart: State.Cart): BasePart?
 	return nil
 end
 
+local function inGoodsBuffer(cart: State.Cart): boolean
+	local zone = gridOf[cart]
+	return zone ~= nil and CollectionService:HasTag(zone, "BufferZone")
+end
+
 function Carts.refresh(cart: State.Cart)
-	local name = if cart.kind == "cardboard"
-		then "Картон"
-		elseif cart.category then cart.category.Name
-		else "Пустая"
-	for _, label in cart.labels do
-		label.Text = `{name}\n{cart.count}/{State.capacity(cart)}`
-	end
+	CartModel.refreshLabels(cart)
 
 	-- У общей тары для картона подсказка меняется: бросить картон или откатить полную
 	if sharedSpotOf(cart) then
@@ -91,7 +92,80 @@ function Carts.refresh(cart: State.Cart)
 			else "Бросить картон"
 		cart.prompt.ObjectText = "Общая тара для картона"
 		cart.prompt.Enabled = true
+	elseif inGoodsBuffer(cart) then
+		local category = cart.category
+		cart.prompt.ActionText = "Взять на раскладку"
+		cart.prompt.ObjectText = `{if category then category.Name else "Товар"} · {cart.count} шт.`
+		cart.prompt.Enabled = true
 	end
+end
+
+-- Поставить тару сеткой на зону. Если места нет, самая старая тара уезжает.
+local function placeInGrid(cart: State.Cart, zone: BasePart, maxCarts: number)
+	local columns = math.max(1, math.floor(zone.Size.X / SLOT_SIZE.X))
+	local rows = math.max(1, math.floor(zone.Size.Z / SLOT_SIZE.Y))
+	local capacity = math.min(columns * rows, maxCarts)
+
+	local grid = grids[zone] or {}
+	grids[zone] = grid
+	local order = gridOrder[zone] or {}
+	gridOrder[zone] = order
+
+	local index: number? = nil
+	for candidate = 0, capacity - 1 do
+		if not grid[candidate] then
+			index = candidate
+			break
+		end
+	end
+	if not index then
+		local oldest = table.remove(order, 1)
+		if oldest then
+			for slot, parked in grid do
+				if parked == oldest then
+					index = slot
+					grid[slot] = nil
+				end
+			end
+			gridOf[oldest] = nil
+			oldest.model:Destroy()
+		end
+	end
+	local slot = index or 0
+
+	grid[slot] = cart
+	gridOf[cart] = zone
+	table.insert(order, cart)
+
+	local x = -zone.Size.X / 2 + SLOT_SIZE.X * (slot % columns + 0.5)
+	local z = -zone.Size.Z / 2 + SLOT_SIZE.Y * (math.floor(slot / columns) + 0.5)
+	cart.model:PivotTo(zone.CFrame * CFrame.new(x, zone.Size.Y / 2, z))
+	cart.model.Parent = State.folder("BufferCarts")
+	Carts.refresh(cart)
+end
+
+local function removeFromGrid(cart: State.Cart)
+	local zone = gridOf[cart]
+	if not zone then
+		return
+	end
+	gridOf[cart] = nil
+	local grid = grids[zone]
+	for slot, parked in grid do
+		if parked == cart then
+			grid[slot] = nil
+		end
+	end
+	local order = gridOrder[zone]
+	local position = table.find(order, cart)
+	if position then
+		table.remove(order, position)
+	end
+end
+
+local function countInGrid(zone: BasePart): number
+	local order = gridOrder[zone]
+	return if order then #order else 0
 end
 
 local function spotOf(workTable: State.WorkTable, cart: State.Cart): number?
@@ -156,8 +230,17 @@ end
 
 -- Поставить тару, которую катит игрок, на свободное место у его стола
 function Carts.park(player: Player, workTable: State.WorkTable)
-	local cart = State.session(player).cart
+	local session = State.session(player)
+	local cart = session.cart
 	if not cart then
+		return
+	end
+	if session.job then
+		notify(
+			player,
+			"Это тара задания на мезонине, её не ставят к столу приёмки",
+			"error"
+		)
 		return
 	end
 	local index = State.freeCartSpot(workTable)
@@ -190,28 +273,7 @@ local function throwCardboard(player: Player, cart: State.Cart)
 	cardboard:Destroy()
 	session.cardboard = nil
 	cart.kind = "cardboard"
-
-	local sheet = Instance.new("Part")
-	sheet.Name = "Cardboard"
-	sheet.Size = Vector3.new(INNER_WIDTH - 0.2, SHEET_THICKNESS * 0.9, INNER_LENGTH - 0.2)
-	sheet.Color = CARDBOARD_COLOR
-	sheet.Material = Enum.Material.Cardboard
-	sheet.CanCollide = false
-	sheet.CanTouch = false
-	sheet.Massless = true
-	sheet.CFrame = cart.model:GetPivot()
-		* CFrame.new(
-			(math.random() - 0.5) * 0.15,
-			BOTTOM + FLOOR_THICKNESS + SHEET_THICKNESS * (cart.count + 0.5),
-			(math.random() - 0.5) * 0.15
-		)
-		* CFrame.Angles(0, math.rad(math.random(-4, 4)), 0)
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = cart.body
-	weld.Part1 = sheet
-	weld.Parent = sheet
-	sheet.Parent = cart.model
-
+	CartModel.addSheet(cart)
 	cart.count += 1
 	Carts.refresh(cart)
 	if cart.count >= State.capacity(cart) then
@@ -301,172 +363,52 @@ local function onSharedCart(player: Player, cart: State.Cart, spot: BasePart)
 	end
 end
 
+-- Тара на товарном буфере: её берут на раскладку по мезонину
+local function onGoodsBufferCart(player: Player, cart: State.Cart)
+	if not State.isNear(player, cart.body, INTERACT_DISTANCE) then
+		return
+	end
+	if not Rating.hasK2Access(player) then
+		notify(
+			player,
+			`Раскладка на мезонине открывается с рейтинга {Config.Rating.K2Access}`,
+			"error"
+		)
+		return
+	end
+	local session = State.session(player)
+	if not State.handsFree(session) or session.job then
+		notify(player, "Сначала закончи то, что делаешь сейчас", "error")
+		return
+	end
+
+	local zone = gridOf[cart]
+	removeFromGrid(cart)
+	if push(player, cart) then
+		Jobs.startPutaway(player, cart)
+		Tasks.refresh(player)
+	elseif zone then
+		placeInGrid(cart, zone, GOODS_BUFFER_MAX)
+	end
+end
+
 local function onCartPrompt(player: Player, cart: State.Cart)
 	local spot = sharedSpotOf(cart)
 	if spot then
 		onSharedCart(player, cart, spot)
+	elseif inGoodsBuffer(cart) then
+		onGoodsBufferCart(player, cart)
 	else
 		onOwnCart(player, cart)
 	end
 end
 
--- Деталь, приваренная к дну. Тара создаётся в начале координат, поэтому cframe — смещение от пола.
-local function addWelded(model: Model, body: BasePart, name: string, size: Vector3, cframe: CFrame, color: Color3): Part
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Size = size
-	part.CFrame = cframe
-	part.Color = color
-	part.Material = Enum.Material.Metal
-	part.TopSurface = Enum.SurfaceType.Smooth
-	part.BottomSurface = Enum.SurfaceType.Smooth
-	part.Anchored = false
-	part.CanCollide = false
-	part.CanTouch = false
-	part.Massless = true
-	part.Parent = model
-
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = body
-	weld.Part1 = part
-	weld.Parent = part
-	return part
-end
-
-local function addLabel(wall: BasePart, face: Enum.NormalId): TextLabel
-	local gui = Instance.new("SurfaceGui")
-	gui.Face = face
-	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-	gui.PixelsPerStud = 40
-	gui.Parent = wall
-
-	local label = Instance.new("TextLabel")
-	label.AnchorPoint = Vector2.new(0.5, 0.5)
-	label.Position = UDim2.fromScale(0.5, 0.5)
-	label.Size = UDim2.fromScale(0.9, 0.6)
-	label.BackgroundTransparency = 1
-	label.TextScaled = true
-	label.Font = Enum.Font.GothamBlack
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.TextStrokeTransparency = 0.4
-	label.Parent = gui
-	return label
-end
-
--- Тара без крышки, смотрит вперёд по -Z, ручка сзади. Точка опоры — на полу под центром.
-local function createCart(): State.Cart
-	local model = Instance.new("Model")
-	model.Name = "Cart"
-
-	local floorHeight = BOTTOM + FLOOR_THICKNESS / 2
-	local body = Instance.new("Part")
-	body.Name = "Body"
-	body.Size = Vector3.new(WIDTH, FLOOR_THICKNESS, LENGTH)
-	body.CFrame = CFrame.new(0, floorHeight, 0)
-	body.PivotOffset = CFrame.new(0, -floorHeight, 0)
-	body.Color = METAL_COLOR
-	body.Material = Enum.Material.Metal
-	body.Anchored = true
-	body.CanCollide = false
-	body.TopSurface = Enum.SurfaceType.Smooth
-	body.BottomSurface = Enum.SurfaceType.Smooth
-	body.Parent = model
-	model.PrimaryPart = body
-
-	-- Стенки
-	local wallY = BOTTOM + FLOOR_THICKNESS + WALL_HEIGHT / 2
-	local sideX = WIDTH / 2 - WALL_THICKNESS / 2
-	local endZ = LENGTH / 2 - WALL_THICKNESS / 2
-	local sideSize = Vector3.new(WALL_THICKNESS, WALL_HEIGHT, LENGTH)
-	local endSize = Vector3.new(WIDTH, WALL_HEIGHT, WALL_THICKNESS)
-	local left = addWelded(model, body, "Wall", sideSize, CFrame.new(-sideX, wallY, 0), METAL_COLOR)
-	local right = addWelded(model, body, "Wall", sideSize, CFrame.new(sideX, wallY, 0), METAL_COLOR)
-	addWelded(model, body, "Wall", endSize, CFrame.new(0, wallY, -endZ), METAL_COLOR)
-	local back = addWelded(model, body, "Wall", endSize, CFrame.new(0, wallY, endZ), METAL_COLOR)
-
-	for _, x in { -1.2, 1.2 } do
-		for _, z in { -2, 2 } do
-			local wheel =
-				addWelded(model, body, "Wheel", Vector3.new(0.4, 0.7, 0.7), CFrame.new(x, 0.35, z), DARK_COLOR)
-			wheel.Shape = Enum.PartType.Cylinder
-		end
-	end
-
-	local handleY = BOTTOM + FLOOR_THICKNESS + WALL_HEIGHT - 0.3
-	for _, x in { -1.2, 1.2 } do
-		addWelded(
-			model,
-			body,
-			"HandleBracket",
-			Vector3.new(0.15, 0.15, 0.5),
-			CFrame.new(x, handleY, LENGTH / 2 + 0.25),
-			DARK_COLOR
-		)
-	end
-	addWelded(model, body, "Handle", Vector3.new(2.6, 0.2, 0.2), CFrame.new(0, handleY, LENGTH / 2 + 0.5), DARK_COLOR)
-
-	-- У своей тары подсказку включает и выключает Tasks.updatePrompts, у общей — Carts.refresh
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Взять тару"
-	prompt.ObjectText = "Тара"
-	prompt.MaxActivationDistance = INTERACT_DISTANCE
-	prompt.RequiresLineOfSight = false
-	prompt.Enabled = false
-	prompt.Parent = body
-
-	local cart: State.Cart = {
-		model = model,
-		body = body,
-		prompt = prompt,
-		labels = {
-			addLabel(left, Enum.NormalId.Left),
-			addLabel(right, Enum.NormalId.Right),
-			addLabel(back, Enum.NormalId.Back),
-		},
-		kind = nil,
-		category = nil,
-		count = 0,
-		visible = 0,
-		wrongPrices = {},
-	}
-	prompt.Triggered:Connect(function(player)
+newCart = function(): State.Cart
+	local cart = CartModel.create()
+	cart.prompt.Triggered:Connect(function(player)
 		onCartPrompt(player, cart)
 	end)
-
-	Carts.refresh(cart)
 	return cart
-end
-
--- Фигурка товара на следующем свободном месте внутри тары (снизу вверх)
-local function addVisual(cart: State.Cart, item: Config.ItemType)
-	local index = cart.visible
-	local layer = math.floor(index / (SLOT_COLUMNS * SLOT_ROWS))
-	local inLayer = index % (SLOT_COLUMNS * SLOT_ROWS)
-	local column = inLayer % SLOT_COLUMNS
-	local row = math.floor(inLayer / SLOT_COLUMNS)
-
-	local jitter = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5) * 0.15
-	local offset = Vector3.new(
-		-INNER_WIDTH / 2 + ITEM_SLOT.X * (column + 0.5),
-		BOTTOM + FLOOR_THICKNESS + ITEM_SLOT.Y * (layer + 0.5),
-		-INNER_LENGTH / 2 + ITEM_SLOT.Z * (row + 0.5)
-	) + jitter
-
-	local visual = Items.create(item, math.min(ITEM_SLOT.X, ITEM_SLOT.Y, ITEM_SLOT.Z) * 0.95)
-	visual.CFrame = cart.model:GetPivot()
-		* CFrame.new(offset)
-		* CFrame.Angles(0, math.random() * 2 * math.pi, 0)
-		* Items.uprightRotation(item)
-	visual.Anchored = false
-	visual.Massless = true
-
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = cart.body
-	weld.Part1 = visual
-	weld.Parent = visual
-	visual.Parent = cart.model
-
-	cart.visible += 1
 end
 
 -- Тара у стола игрока, по которой кликнули ТСД
@@ -517,12 +459,10 @@ function Carts.putItem(player: Player, cart: State.Cart)
 	end
 
 	cart.count += 1
-	local target = math.ceil(cart.count / Config.CartCapacity * SLOT_COUNT)
-	while cart.visible < math.min(target, SLOT_COUNT) do
-		addVisual(cart, held.item)
-	end
+	cart.contents[held.item] = (cart.contents[held.item] or 0) + 1
+	CartModel.syncVisuals(cart, held.item)
 
-	local cartTop = cart.body.Position + Vector3.new(0, WALL_HEIGHT, 0)
+	local cartTop = cart.body.Position + Vector3.new(0, CartModel.WALL_HEIGHT, 0)
 	effectEvent:FireAllClients("item", held.part.Position, cartTop, held.item.Look.Color)
 	effectEvent:FireClient(player, "reward", cartTop, price / 100)
 	held.part:Destroy()
@@ -544,16 +484,12 @@ function Carts.putItem(player: Player, cart: State.Cart)
 	end
 end
 
--- Буфер пустых тар: взять пустую или вернуть пустую обратно
+-- Буфер пустых тар К4: взять пустую или вернуть пустую обратно
 local function onEmptyBuffer(player: Player, zone: BasePart)
 	if not State.isNear(player, zone, zoneReach(zone)) then
 		return
 	end
 	local session = State.session(player)
-	if not session.workTable then
-		notify(player, "Сначала получи стол у старших", "error")
-		return
-	end
 
 	local cart = session.cart
 	if cart then
@@ -562,57 +498,49 @@ local function onEmptyBuffer(player: Player, zone: BasePart)
 			return
 		end
 		stopPushing(player, cart)
+		Jobs.finish(player)
 		cart.model:Destroy()
 		notify(player, "Тара возвращена в буфер пустых тар", "info")
 		Tasks.refresh(player)
 		return
 	end
 
+	if not session.workTable then
+		notify(
+			player,
+			"Пустые тары К4 — для приёмки. Сначала получи стол у старших",
+			"error"
+		)
+		return
+	end
 	if not State.handsFree(session) then
 		notify(player, "Руки заняты", "error")
 		return
 	end
-	local newCart = createCart()
-	if push(player, newCart) then
+	local fresh = newCart()
+	if push(player, fresh) then
 		Tasks.refresh(player)
 	else
-		newCart.model:Destroy()
+		fresh.model:Destroy()
 	end
-end
-
--- Тары на буфере стоят сеткой; когда места нет, самая старая уступает место новой
-local function placeInBuffer(model: Model, zone: BasePart, maxCarts: number)
-	local columns = math.max(1, math.floor(zone.Size.X / SLOT_SIZE.X))
-	local rows = math.max(1, math.floor(zone.Size.Z / SLOT_SIZE.Y))
-
-	local buffer = buffers[zone]
-	if not buffer then
-		buffer = { placed = 0, slots = {} }
-		buffers[zone] = buffer
-	end
-
-	local index = buffer.placed % math.min(columns * rows, maxCarts)
-	buffer.placed += 1
-	local old = buffer.slots[index]
-	if old then
-		old:Destroy()
-	end
-	buffer.slots[index] = model
-
-	local x = -zone.Size.X / 2 + SLOT_SIZE.X * (index % columns + 0.5)
-	local z = -zone.Size.Z / 2 + SLOT_SIZE.Y * (math.floor(index / columns) + 0.5)
-	model:PivotTo(zone.CFrame * CFrame.new(x, zone.Size.Y / 2, z))
-	model.Parent = State.folder("BufferCarts")
 end
 
 local function deliverGoods(player: Player, zone: BasePart)
 	local session = State.session(player)
 	local cart = session.cart
 	if not cart then
-		notify(player, "Сюда привозят тары с товаром", "info")
+		notify(
+			player,
+			"Здесь стоят тары с товаром: их берут на раскладку по мезонину",
+			"info"
+		)
 		return
 	end
 	if not State.isNear(player, zone, zoneReach(zone)) then
+		return
+	end
+	if session.job then
+		notify(player, "Это тара задания: её везут на мезонин", "error")
 		return
 	end
 
@@ -645,13 +573,14 @@ local function deliverGoods(player: Player, zone: BasePart)
 		end
 	end
 
+	-- Пересорт проверили: дальше эта тара едет на раскладку, повторно за него не штрафуют
+	local wrong = #cart.wrongPrices
+	table.clear(cart.wrongPrices)
 	stopPushing(player, cart)
-	cart.prompt:Destroy()
-	placeInBuffer(cart.model, zone, GOODS_BUFFER_MAX)
+	placeInGrid(cart, zone, GOODS_BUFFER_MAX)
 	notify(player, `Тара сдана на буфер «{category.Name}»: {cart.count} шт.`, "success")
 
 	Rating.addPoints(player, Config.Rating.Points.CartDelivered)
-	local wrong = #cart.wrongPrices
 	if caught > 0 then
 		PlayerData.addKopecks(player, -fine)
 		Rating.addPoints(player, Config.Rating.Points.MixCaught * caught)
@@ -686,8 +615,7 @@ local function onWasteBuffer(player: Player, zone: BasePart)
 			return
 		end
 		stopPushing(player, cart)
-		cart.prompt:Destroy()
-		placeInBuffer(cart.model, zone, WASTE_BUFFER_MAX)
+		placeInGrid(cart, zone, WASTE_BUFFER_MAX)
 		notify(
 			player,
 			`Тара с картоном сдана в буфер мусора: {cart.count} шт.`,
@@ -721,12 +649,8 @@ local function onSharedSpot(player: Player, spot: BasePart)
 		notify(player, "Привези сюда пустую тару из буфера пустых тар", "info")
 		return
 	end
-	if cart.kind == "goods" then
-		notify(
-			player,
-			"Это место для тары с картоном, а у тебя тара с товаром",
-			"error"
-		)
+	if cart.kind == "goods" or cart.kind == "order" or session.job then
+		notify(player, "Это место для тары с картоном", "error")
 		return
 	end
 
@@ -738,18 +662,108 @@ local function onSharedSpot(player: Player, spot: BasePart)
 	Tasks.refresh(player)
 end
 
--- Игрок умер или ушёл: тара встаёт на свободное место у стола или исчезает
+-- Зона пустых тар мезонина: вернуть пустую тару после раскладки или взять тару на сборку
+local function onK2Empty(player: Player, zone: BasePart)
+	if not State.isNear(player, zone, zoneReach(zone)) then
+		return
+	end
+	local session = State.session(player)
+
+	local cart = session.cart
+	if cart then
+		if cart.count > 0 then
+			notify(player, "Сюда возвращают только пустые тары", "error")
+			return
+		end
+		stopPushing(player, cart)
+		Jobs.finish(player)
+		cart.kind = nil
+		cart.title = nil
+		cart.prompt.Enabled = false
+		placeInGrid(cart, zone, K2_EMPTY_MAX)
+		notify(player, "Пустая тара оставлена в зоне мезонина", "info")
+		Tasks.refresh(player)
+		return
+	end
+
+	if not Rating.hasK2Access(player) then
+		notify(
+			player,
+			`Сборка на мезонине открывается с рейтинга {Config.Rating.K2Access}`,
+			"error"
+		)
+		return
+	end
+	if not State.handsFree(session) or session.job then
+		notify(player, "Сначала закончи то, что делаешь сейчас", "error")
+		return
+	end
+
+	local fresh = newCart()
+	if not push(player, fresh) then
+		fresh.model:Destroy()
+		return
+	end
+	if not Jobs.startPicking(player, fresh) then
+		stopPushing(player, fresh)
+		fresh.model:Destroy()
+		notify(
+			player,
+			"На мезонине сейчас нечего собирать: сначала нужна раскладка",
+			"error"
+		)
+		return
+	end
+	Tasks.refresh(player)
+end
+
+-- Зона отгрузки: сюда сдают собранные заказы
+local function onShipping(player: Player, zone: BasePart)
+	if not State.isNear(player, zone, zoneReach(zone)) then
+		return
+	end
+	local session = State.session(player)
+	local cart = session.cart
+	local job = session.job
+	if not cart or not job or job.kind ~= "picking" or job.cart ~= cart then
+		notify(player, "Сюда сдают собранные заказы", "info")
+		return
+	end
+	if not Jobs.isOrderComplete(job) then
+		notify(
+			player,
+			"Заказ ещё не собран: смотри задание вверху экрана",
+			"error"
+		)
+		return
+	end
+
+	stopPushing(player, cart)
+	cart.model:Destroy()
+	Jobs.ship(player)
+	Tasks.refresh(player)
+end
+
+-- Игрок умер или ушёл: тара встаёт на свободное место у стола или исчезает.
+-- Тара задания на мезонине исчезает, а бронь товара снимается.
 function Carts.dropPushed(player: Player, returnToTable: boolean)
 	local session = State.sessions[player]
-	local cart = if session then session.cart else nil
-	if not session or not cart then
+	if not session then
+		return
+	end
+	local job = session.job
+	if job then
+		Jobs.cancel(player)
+	end
+	local cart = session.cart
+	if not cart then
 		return
 	end
 
 	stopPushing(player, cart)
 	local workTable = session.workTable
 	local index = if workTable then State.freeCartSpot(workTable) else nil
-	if returnToTable and workTable and index then
+	if returnToTable and workTable and index and not job then
 		parkAt(workTable, cart, index)
 	else
 		cart.model:Destroy()
@@ -761,6 +775,39 @@ function Carts.cleanupTable(workTable: State.WorkTable)
 		cart.model:Destroy()
 	end
 	table.clear(workTable.carts)
+end
+
+-- Соседняя смена приёмки: тара с товаром одной категории для раскладки
+local function generateGoodsCart(category: Config.Category): State.Cart
+	local cart = newCart()
+	cart.kind = "goods"
+	cart.category = category
+
+	local total = math.random(math.floor(Config.CartCapacity * 0.6), Config.CartCapacity)
+	local pool = table.clone(category.Items)
+	local kinds = math.min(#pool, math.random(2, 3))
+	local left = total
+	for index = 1, kinds do
+		local item = table.remove(pool, math.random(#pool)) :: Config.ItemType
+		local amount = if index == kinds then left else math.random(1, left - (kinds - index))
+		cart.contents[item] = amount
+		left -= amount
+	end
+	cart.count = total
+	CartModel.syncVisuals(cart)
+	return cart
+end
+
+-- Если на зоне товарного буфера почти нет тар, их привозит соседняя смена: раскладчикам всегда есть работа
+local function refillGoodsBuffers()
+	for _, zone in CollectionService:GetTagged("BufferZone") do
+		local category = categoryById(zone:GetAttribute("Category"))
+		if zone:IsA("BasePart") and category then
+			while countInGrid(zone) < GOODS_BUFFER_MIN do
+				placeInGrid(generateGoodsCart(category), zone, GOODS_BUFFER_MAX)
+			end
+		end
+	end
 end
 
 local function addZonePrompt(zone: BasePart, action: string, object: string, handler: (Player, BasePart) -> ())
@@ -775,50 +822,67 @@ local function addZonePrompt(zone: BasePart, action: string, object: string, han
 	end)
 end
 
+local function forTagged(tag: string, callback: (BasePart) -> ())
+	for _, instance in CollectionService:GetTagged(tag) do
+		if instance:IsA("BasePart") then
+			callback(instance)
+		end
+	end
+end
+
 function Carts.start()
-	for _, zone in CollectionService:GetTagged("CartParking") do
-		if zone:IsA("BasePart") then
-			addZonePrompt(
-				zone,
-				"Взять или вернуть пустую тару",
-				"Буфер пустых тар",
-				onEmptyBuffer
-			)
-		end
-	end
-
-	for _, zone in CollectionService:GetTagged("BufferZone") do
-		if zone:IsA("BasePart") then
-			local object = `Буфер «{categoryName(zone:GetAttribute("Category"))}»`
-			addZonePrompt(zone, "Сдать тару", object, deliverGoods)
-		end
-	end
-
-	for _, zone in CollectionService:GetTagged("WasteBuffer") do
-		if zone:IsA("BasePart") then
-			addZonePrompt(zone, "Сдать картон", "Буфер мусора", onWasteBuffer)
-		end
-	end
+	forTagged("CartParking", function(zone)
+		addZonePrompt(
+			zone,
+			"Взять или вернуть пустую тару",
+			"Буфер пустых тар",
+			onEmptyBuffer
+		)
+	end)
+	forTagged("BufferZone", function(zone)
+		local object = `Буфер «{categoryName(zone:GetAttribute("Category"))}»`
+		addZonePrompt(zone, "Сдать тару", object, deliverGoods)
+	end)
+	forTagged("WasteBuffer", function(zone)
+		addZonePrompt(zone, "Сдать картон", "Буфер мусора", onWasteBuffer)
+	end)
+	forTagged("K2EmptyCarts", function(zone)
+		addZonePrompt(
+			zone,
+			"Взять тару на сборку или вернуть пустую",
+			"Пустые тары мезонина",
+			onK2Empty
+		)
+	end)
+	forTagged("ShippingZone", function(zone)
+		addZonePrompt(zone, "Сдать заказ", "Отгрузка", onShipping)
+	end)
 
 	-- В начале каждого ряда сразу стоит общая тара для картона
-	for _, spot in CollectionService:GetTagged("CardboardSpot") do
-		if spot:IsA("BasePart") then
-			local prompt = Instance.new("ProximityPrompt")
-			prompt.ActionText = "Поставить тару для картона"
-			prompt.ObjectText = "Место общей тары"
-			prompt.MaxActivationDistance = INTERACT_DISTANCE
-			prompt.RequiresLineOfSight = false
-			prompt.Parent = spot
-			prompt.Triggered:Connect(function(player)
-				onSharedSpot(player, spot)
-			end)
+	forTagged("CardboardSpot", function(spot)
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = "Поставить тару для картона"
+		prompt.ObjectText = "Место общей тары"
+		prompt.MaxActivationDistance = INTERACT_DISTANCE
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = spot
+		prompt.Triggered:Connect(function(player)
+			onSharedSpot(player, spot)
+		end)
 
-			local cart = createCart()
-			cart.kind = "cardboard"
-			placeOnSpot(cart, spot, State.folder("SharedCarts"))
-			setShared(spot, cart)
+		local cart = newCart()
+		cart.kind = "cardboard"
+		placeOnSpot(cart, spot, State.folder("SharedCarts"))
+		setShared(spot, cart)
+	end)
+
+	refillGoodsBuffers()
+	task.spawn(function()
+		while true do
+			task.wait(Config.Mezzanine.BufferRefill)
+			refillGoodsBuffers()
 		end
-	end
+	end)
 end
 
 return Carts

@@ -1,7 +1,8 @@
 --!strict
--- Здание склада: пол, стены, центральный проход и блок К2 со стеллажами.
--- В К2 ведёт проход с турникетом: он пропускает игроков с рейтингом из Config.Rating.K2Access.
--- Начинка блока К4 (приёмка) строится в Map/Receiving.
+-- Здание склада: пол, стены, центральный проход и ограждение блока К2.
+-- В К2 ведут проход с турникетом для людей и ворота для техники. Оба пропускают игроков
+-- с рейтингом из Config.Rating.K2Access (ворота пропускают и тягачи).
+-- Начинка блоков строится в Map/Receiving (К4, приёмка) и Map/Mezzanine (К2, мезонин).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -12,18 +13,16 @@ local F = Parts.FLOOR
 -- Склад расширен на север и восток, чтобы в блоке К4 поместились большие буферы
 local MIN_X, MAX_X = -150, 170
 local MIN_Z, MAX_Z = -100, 200
-local HEIGHT = 30
+local HEIGHT = 50 -- высокий потолок: в К2 стоит трёхэтажный мезонин
 local ENTRANCE_HALF_WIDTH = 12
 local AISLE_HALF_WIDTH = 10 -- центральный проход между блоками К2 и К4
 local GATE_MIN_Z, GATE_MAX_Z = -85, -73 -- проход с турникетом в блок К2, недалеко от входа
+local VEHICLE_GATE_MIN_Z, VEHICLE_GATE_MAX_Z = 182, 196 -- ворота для тягачей у северной стены
 
 local FLOOR_COLOR = Color3.fromRGB(145, 145, 150)
 local WALL_COLOR = Color3.fromRGB(215, 215, 220)
 local FENCE_COLOR = Color3.fromRGB(120, 130, 145)
 local LINE_COLOR = Color3.fromRGB(241, 196, 15)
-local RACK_FRAME_COLOR = Color3.fromRGB(40, 60, 120)
-local RACK_BOARD_COLOR = Color3.fromRGB(230, 126, 34)
-local GOODS_COLOR = Color3.fromRGB(196, 154, 108)
 
 local Warehouse = {}
 
@@ -68,75 +67,10 @@ local function buildWalls(model: Model)
 	Parts.box("Wall", Vector3.new(MAX_X, F, MIN_Z), Vector3.new(MAX_X + 1, top, MAX_Z), WALL_COLOR, material, model)
 end
 
--- Длинный стеллаж с коробками, просто для вида
-local function buildDecorRack(model: Model, fromX: number, toX: number, z: number, random: Random)
-	local rack = Instance.new("Model")
-	rack.Name = "Rack"
-	rack.Parent = model
-
-	for x = fromX, toX, 11 do
-		for _, side in { -2, 2 } do
-			Parts.part({
-				Name = "Post",
-				Size = Vector3.new(0.6, 16, 0.6),
-				CFrame = CFrame.new(x, F + 8, z + side),
-				Color = RACK_FRAME_COLOR,
-				Material = Enum.Material.Metal,
-			}, rack)
-		end
-	end
-
-	for _, height in { 0.5, 5.5, 10.5, 15.5 } do
-		local boardTop = F + height + 0.2
-		Parts.box(
-			"Board",
-			Vector3.new(fromX, boardTop - 0.4, z - 2.3),
-			Vector3.new(toX, boardTop, z + 2.3),
-			RACK_BOARD_COLOR,
-			Enum.Material.Metal,
-			rack
-		)
-
-		if height < 15 then
-			for x = fromX + 2, toX - 6, 8 do
-				if random:NextNumber() < 0.7 then
-					Parts.box(
-						"Goods",
-						Vector3.new(x, boardTop, z - 1.8),
-						Vector3.new(x + 5, boardTop + 3.5, z + 1.8),
-						GOODS_COLOR,
-						Enum.Material.Cardboard,
-						rack
-					)
-				end
-			end
-		end
-	end
-end
-
-local function buildBlockK2(model: Model)
-	local fenceX = -AISLE_HALF_WIDTH
-	local fenceTop = F + 10
-	Parts.box(
-		"K2Fence",
-		Vector3.new(fenceX - 1, F, MIN_Z),
-		Vector3.new(fenceX, fenceTop, GATE_MIN_Z),
-		FENCE_COLOR,
-		Enum.Material.DiamondPlate,
-		model
-	)
-	Parts.box(
-		"K2Fence",
-		Vector3.new(fenceX - 1, F, GATE_MAX_Z),
-		Vector3.new(fenceX, fenceTop, MAX_Z),
-		FENCE_COLOR,
-		Enum.Material.DiamondPlate,
-		model
-	)
-
-	-- Турникет в К2: стойки и прозрачный барьер, который пропускает игроков с нужным рейтингом
-	local gateZ = (GATE_MIN_Z + GATE_MAX_Z) / 2
-	for _, z in { GATE_MIN_Z + 0.4, gateZ, GATE_MAX_Z - 0.4 } do
+-- Барьер, который пропускает только тех, кому можно в К2 (настраивается группами столкновений в Uniform)
+local function buildBarrier(model: Model, fenceX: number, fromZ: number, toZ: number)
+	local centerZ = (fromZ + toZ) / 2
+	for _, z in { fromZ + 0.4, centerZ, toZ - 0.4 } do
 		Parts.part({
 			Name = "TurnstilePost",
 			Size = Vector3.new(1.2, 3.4, 0.6),
@@ -147,38 +81,67 @@ local function buildBlockK2(model: Model)
 	end
 	local gate = Parts.part({
 		Name = "K2Gate",
-		Size = Vector3.new(0.4, 9, GATE_MAX_Z - GATE_MIN_Z),
-		CFrame = CFrame.new(fenceX - 0.5, F + 4.5, gateZ),
+		Size = Vector3.new(0.4, 9, toZ - fromZ),
+		CFrame = CFrame.new(fenceX - 0.5, F + 4.5, centerZ),
 		Color = Color3.fromRGB(255, 90, 90),
 		Material = Enum.Material.Glass,
 		Transparency = 0.75,
 		CanQuery = false,
 	}, model)
 	Parts.tag(gate, "K2Gate")
+end
 
-	local facingAisle = CFrame.Angles(0, math.pi / 2, 0)
-	Parts.sign(
-		`БЛОК К2 · МЕЗОНИН · вход с рейтинга {Config.Rating.K2Access}`,
-		CFrame.new(fenceX + 0.2, F + 12, gateZ) * facingAisle,
-		Vector3.new(30, 3, 0.3),
-		Parts.BRAND,
-		model
-	)
-	for _, z in { 20, 100, 170 } do
-		Parts.sign(
-			"БЛОК К2 · МЕЗОНИН (строится)",
-			CFrame.new(fenceX + 0.2, F + 7, z) * facingAisle,
-			Vector3.new(26, 3.5, 0.3),
-			Color3.fromRGB(110, 110, 120),
+local function buildBlockK2(model: Model)
+	local fenceX = -AISLE_HALF_WIDTH
+	local fenceTop = F + 10
+	-- Ограждение с двумя проходами: турникет у входа и ворота для техники на севере
+	local segments = { { MIN_Z, GATE_MIN_Z }, { GATE_MAX_Z, VEHICLE_GATE_MIN_Z }, { VEHICLE_GATE_MAX_Z, MAX_Z } }
+	for _, segment in segments do
+		Parts.box(
+			"K2Fence",
+			Vector3.new(fenceX - 1, F, segment[1]),
+			Vector3.new(fenceX, fenceTop, segment[2]),
+			FENCE_COLOR,
+			Enum.Material.DiamondPlate,
 			model
 		)
 	end
 
-	-- Одинаковое зерно: стеллажи выглядят одинаково при каждом запуске
-	local random = Random.new(2)
-	for _, z in { -70, -35, 0, 35, 70, 105, 140, 175 } do
-		buildDecorRack(model, MIN_X + 15, fenceX - 15, z, random)
-	end
+	-- Для тягачей стоек нет: только прозрачный барьер
+	buildBarrier(model, fenceX, GATE_MIN_Z, GATE_MAX_Z)
+	local vehicleGate = Parts.part({
+		Name = "K2Gate",
+		Size = Vector3.new(0.4, 9, VEHICLE_GATE_MAX_Z - VEHICLE_GATE_MIN_Z),
+		CFrame = CFrame.new(fenceX - 0.5, F + 4.5, (VEHICLE_GATE_MIN_Z + VEHICLE_GATE_MAX_Z) / 2),
+		Color = Color3.fromRGB(255, 90, 90),
+		Material = Enum.Material.Glass,
+		Transparency = 0.75,
+		CanQuery = false,
+	}, model)
+	Parts.tag(vehicleGate, "K2Gate")
+
+	local facingAisle = CFrame.Angles(0, math.pi / 2, 0)
+	Parts.sign(
+		`БЛОК К2 · МЕЗОНИН · вход с рейтинга {Config.Rating.K2Access}`,
+		CFrame.new(fenceX + 0.2, F + 12, (GATE_MIN_Z + GATE_MAX_Z) / 2) * facingAisle,
+		Vector3.new(30, 3, 0.3),
+		Parts.BRAND,
+		model
+	)
+	Parts.sign(
+		"ВОРОТА ДЛЯ ТЕХНИКИ · К2",
+		CFrame.new(fenceX + 0.2, F + 12, (VEHICLE_GATE_MIN_Z + VEHICLE_GATE_MAX_Z) / 2) * facingAisle,
+		Vector3.new(16, 2.5, 0.3),
+		Color3.fromRGB(50, 50, 60),
+		model
+	)
+	Parts.sign(
+		"БЛОК К2 · МЕЗОНИН: РАСКЛАДКА И СБОРКА",
+		CFrame.new(fenceX + 0.2, F + 7, 40) * facingAisle,
+		Vector3.new(30, 3.5, 0.3),
+		Parts.BRAND,
+		model
+	)
 end
 
 function Warehouse.build(parent: Instance)

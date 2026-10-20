@@ -160,13 +160,38 @@ local categories: { Category } = {
 			},
 		},
 	},
+	{
+		Id = "Pets",
+		Name = "Зоотовары",
+		Color = Color3.fromRGB(155, 89, 182),
+		Items = {
+			{
+				Name = "Лакомство для собак",
+				Size = "S",
+				Price = 1.3,
+				Look = look("Block", Vector3.new(0.4, 0.2, 0.3), Color3.fromRGB(211, 84, 0)),
+			},
+			{
+				Name = "Корм для кошек",
+				Size = "M",
+				Price = 2.3,
+				Look = look("Block", Vector3.new(0.6, 0.8, 0.3), Color3.fromRGB(41, 128, 185)),
+			},
+			{
+				Name = "Наполнитель",
+				Size = "L",
+				Price = 3.7,
+				Look = look("Block", Vector3.new(0.9, 1.1, 0.5), Color3.fromRGB(127, 140, 141)),
+			},
+		},
+	},
 }
 
--- Сколько штук товара лежит в коробке, в зависимости от габаритов
-local itemSizes: { [string]: { Min: number, Max: number } } = {
-	S = { Min = 30, Max = 50 },
-	M = { Min = 15, Max = 25 },
-	L = { Min = 6, Max = 10 },
+-- Сколько штук товара лежит в коробке и сколько влезает в ячейку мезонина, в зависимости от габаритов
+local itemSizes: { [string]: { Min: number, Max: number, CellCapacity: number } } = {
+	S = { Min = 30, Max = 50, CellCapacity = 100 },
+	M = { Min = 15, Max = 25, CellCapacity = 40 },
+	L = { Min = 6, Max = 10, CellCapacity = 15 },
 }
 
 local Config = {
@@ -228,6 +253,35 @@ local Config = {
 			{ From = 0.95, Bonus = 0.1 },
 			{ From = 0.9, Bonus = 0.05 },
 		},
+	},
+
+	-- Мезонин в блоке К2: этажи снизу вверх, на каждом две категории (южная и северная половины)
+	Mezzanine = {
+		Floors = {
+			{ "Chemistry", "Beauty" },
+			{ "General", "Electronics" },
+			{ "Kids", "Pets" },
+		},
+		InitialFill = 0.5, -- какая доля ячеек при запуске сервера уже с товаром
+		PutawayPay = 0.4, -- раскладка: доля цены пика за каждую разложенную штуку
+		PickPay = 1, -- сборка: доля цены пика за каждую собранную штуку
+		OrderBonus = 20, -- рублей за сданный заказ
+		OrderLines = { Min = 3, Max = 6 }, -- сколько разных товаров в заказе
+		LineQuantity = { Min = 1, Max = 3 }, -- сколько штук каждого товара
+		BufferRefill = 60, -- раз во сколько секунд соседняя смена пополняет товарный буфер, если он почти пуст
+		Points = { PutawayBatch = 5, PickLine = 3, OrderShipped = 15 },
+	},
+
+	-- Карщики: тягач с «паровозом» из тар
+	Tugger = {
+		RatingRequired = 4000, -- с какого рейтинга выдают права на тягач
+		MaxCarts = 6, -- сколько тар можно прицепить
+		PayPerCart = 15, -- рублей за каждую довезённую тару
+		PointsPerCart = 5,
+		WaitBeforeNpc = 180, -- тара ждёт карщика дольше — её увозит NPC
+		DeliverBeforeNpc = 300, -- карщик подцепил тары и не довёз за это время — довозит NPC
+		Speed = 26, -- скорость тягача, studs в секунду
+		NpcSpeed = 18,
 	},
 
 	ScanCooldown = 0.15, -- минимальная пауза между кликами ТСД, сек

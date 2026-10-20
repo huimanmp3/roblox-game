@@ -8,6 +8,17 @@ local Config = require(ReplicatedStorage.Shared.Config)
 
 local Items = {}
 
+local categoryByItem: { [Config.ItemType]: Config.Category } = {}
+for _, category in Config.Categories do
+	for _, item in category.Items do
+		categoryByItem[item] = category
+	end
+end
+
+function Items.categoryOf(item: Config.ItemType): Config.Category
+	return categoryByItem[item]
+end
+
 -- maxSize: товар уменьшается, чтобы самая длинная сторона была не больше этого
 function Items.create(item: Config.ItemType, maxSize: number?): Part
 	local look = item.Look

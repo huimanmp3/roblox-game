@@ -34,14 +34,47 @@ export type Cart = {
 	body: BasePart, -- дно тележки, к нему приварено всё остальное
 	prompt: ProximityPrompt,
 	labels: { TextLabel },
-	-- Чем занята тара: "goods" — товар, "cardboard" — картон, nil — пустая.
-	-- Назначение задаёт первое, что в неё положили.
+	-- Чем занята тара: "goods" — товар, "cardboard" — картон, "order" — собранный заказ,
+	-- nil — пустая. Назначение задаёт первое, что в неё положили.
 	kind: string?,
 	category: Category?, -- категория первого положенного товара
+	title: string?, -- своя надпись на таре (например, номер заказа)
 	count: number, -- штук товара или разрезанных коробок
-	visible: number, -- сколько фигурок товара видно внутри
+	contents: { [ItemType]: number }, -- сколько какого товара внутри
+	visuals: { BasePart }, -- фигурки товара и листы картона внутри
 	-- Цены пиков товара не той категории (в копейках): за него могут оштрафовать на буфере
 	wrongPrices: { number },
+}
+
+-- Ячейка стеллажа на мезонине. В ячейке лежит только один товар.
+export type Cell = {
+	part: BasePart,
+	address: string, -- «этаж-ряд-ячейка», например 2-05-12
+	floor: number,
+	category: Category,
+	item: ItemType?,
+	qty: number,
+	reserved: number, -- столько штук уже отложено под заказы сборщиков
+	claimedBy: Player?, -- раскладчик, которому ТСД назначил эту ячейку
+	label: TextLabel,
+	visual: BasePart?,
+}
+
+export type OrderLine = {
+	item: ItemType,
+	qty: number,
+	cell: Cell,
+	picked: boolean,
+}
+
+-- Задание на мезонине: раскладка товара из тары по ячейкам или сборка заказа
+export type Job = {
+	kind: string, -- "putaway" или "picking"
+	cart: Cart,
+	target: Cell?, -- раскладка: куда нести товар сейчас
+	targetItem: ItemType?,
+	orderNumber: number, -- сборка: номер заказа и его строки
+	lines: { OrderLine },
 }
 
 export type HeldItem = {
@@ -85,6 +118,7 @@ export type Session = {
 	cart: Cart?,
 	cardboard: BasePart?,
 	held: HeldItem?,
+	job: Job?, -- задание на мезонине
 	lastScan: number,
 }
 
@@ -109,6 +143,7 @@ function State.session(player: Player): Session
 		cart = nil,
 		cardboard = nil,
 		held = nil,
+		job = nil,
 		lastScan = 0,
 	}
 	-- Для игрока, который уже вышел, данные не сохраняем
