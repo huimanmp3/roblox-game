@@ -15,7 +15,9 @@ export type ItemLook = {
 export type ItemType = {
 	Name: string,
 	Size: string, -- габариты: "S", "M" или "L", от них зависит, сколько штук в коробке
-	Price: number, -- базовая цена пика в рублях
+	-- Базовая цена пика в рублях. Сейчас средний пик по всем товарам ≈ 2.60 ₽
+	-- (на реальной приёмке 1.5–3.5 ₽): мелочь дешевле, крупный товар дороже.
+	Price: number,
 	Look: ItemLook,
 }
 
@@ -41,19 +43,19 @@ local categories: { Category } = {
 			{
 				Name = "Губки для посуды",
 				Size = "S",
-				Price = 0.02,
+				Price = 1.1,
 				Look = look("Block", Vector3.new(0.5, 0.25, 0.35), Color3.fromRGB(241, 196, 15)),
 			},
 			{
 				Name = "Средство для посуды",
 				Size = "M",
-				Price = 0.15,
+				Price = 2.2,
 				Look = look("Cylinder", Vector3.new(0.35, 0.9, 0.35), Color3.fromRGB(46, 204, 113)),
 			},
 			{
 				Name = "Стиральный порошок",
 				Size = "L",
-				Price = 0.6,
+				Price = 3.6,
 				Look = look("Block", Vector3.new(1, 1.2, 0.5), Color3.fromRGB(230, 126, 34)),
 			},
 		},
@@ -66,19 +68,19 @@ local categories: { Category } = {
 			{
 				Name = "Помада",
 				Size = "S",
-				Price = 0.05,
+				Price = 1.4,
 				Look = look("Cylinder", Vector3.new(0.15, 0.4, 0.15), Color3.fromRGB(192, 57, 43)),
 			},
 			{
 				Name = "Шампунь",
 				Size = "M",
-				Price = 0.2,
+				Price = 2.4,
 				Look = look("Cylinder", Vector3.new(0.4, 0.9, 0.4), Color3.fromRGB(255, 150, 200)),
 			},
 			{
 				Name = "Фен",
 				Size = "L",
-				Price = 1,
+				Price = 4.5,
 				Look = look("Block", Vector3.new(0.5, 1, 1.1), Color3.fromRGB(40, 40, 45)),
 			},
 		},
@@ -91,19 +93,19 @@ local categories: { Category } = {
 			{
 				Name = "Носки",
 				Size = "S",
-				Price = 0.01,
+				Price = 1,
 				Look = look("Block", Vector3.new(0.5, 0.12, 0.35), Color3.fromRGB(127, 140, 141)),
 			},
 			{
 				Name = "Кружка",
 				Size = "M",
-				Price = 0.25,
+				Price = 2.6,
 				Look = look("Cylinder", Vector3.new(0.55, 0.6, 0.55), Color3.fromRGB(236, 240, 241)),
 			},
 			{
 				Name = "Плед",
 				Size = "L",
-				Price = 0.8,
+				Price = 3.9,
 				Look = look("Roll", Vector3.new(1.2, 0.7, 0.7), Color3.fromRGB(210, 180, 140)),
 			},
 		},
@@ -116,19 +118,19 @@ local categories: { Category } = {
 			{
 				Name = "Зарядка",
 				Size = "S",
-				Price = 0.08,
+				Price = 1.6,
 				Look = look("Block", Vector3.new(0.3, 0.3, 0.4), Color3.fromRGB(245, 245, 245)),
 			},
 			{
 				Name = "Наушники",
 				Size = "M",
-				Price = 0.4,
+				Price = 3,
 				Look = look("Ball", Vector3.new(0.6, 0.6, 0.6), Color3.fromRGB(30, 30, 30)),
 			},
 			{
 				Name = "Чайник",
 				Size = "L",
-				Price = 0.9,
+				Price = 4.2,
 				Look = look("Cylinder", Vector3.new(0.9, 1, 0.9), Color3.fromRGB(189, 195, 199)),
 			},
 		},
@@ -141,19 +143,19 @@ local categories: { Category } = {
 			{
 				Name = "Соска",
 				Size = "S",
-				Price = 0.03,
+				Price = 1.2,
 				Look = look("Ball", Vector3.new(0.25, 0.25, 0.25), Color3.fromRGB(135, 206, 250)),
 			},
 			{
 				Name = "Мягкая игрушка",
 				Size = "M",
-				Price = 0.3,
+				Price = 2.5,
 				Look = look("Ball", Vector3.new(0.7, 0.7, 0.7), Color3.fromRGB(160, 110, 70)),
 			},
 			{
 				Name = "Конструктор",
 				Size = "L",
-				Price = 0.7,
+				Price = 3.8,
 				Look = look("Block", Vector3.new(1, 0.7, 0.4), Color3.fromRGB(231, 76, 60)),
 			},
 		},
