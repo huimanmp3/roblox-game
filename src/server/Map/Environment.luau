@@ -1,5 +1,5 @@
 --!strict
--- Свет и атмосфера: мягкий ровный свет склада, лёгкая дымка и цветокоррекция.
+-- Свет: ровный нейтральный свет склада, мягкие тени и лёгкая цветокоррекция.
 -- Если хочешь настроить свет вручную в Studio (Lighting), убери вызов Environment.apply из Map/init:
 -- тогда скрипт ничего не будет менять.
 
@@ -29,34 +29,29 @@ function Environment.apply()
 		(Lighting :: any).PrioritizeLightingQuality = true
 	end)
 	Lighting.GlobalShadows = true
-	Lighting.ShadowSoftness = 0.3
+	Lighting.ShadowSoftness = 0.2
 	Lighting.ClockTime = 13
-	Lighting.Brightness = 2
-	-- Под крышей склада свет в основном рассеянный: делаем его светлым и чуть холодным
-	Lighting.Ambient = Color3.fromRGB(128, 130, 140)
-	Lighting.OutdoorAmbient = Color3.fromRGB(140, 142, 150)
+	Lighting.Brightness = 1.5
+	-- Под крышей склада свет в основном рассеянный: ровный и нейтральный, без пересвета
+	Lighting.Ambient = Color3.fromRGB(96, 98, 106)
+	Lighting.OutdoorAmbient = Color3.fromRGB(110, 112, 120)
 	Lighting.EnvironmentDiffuseScale = 1
-	Lighting.EnvironmentSpecularScale = 1
-	Lighting.ExposureCompensation = 0.15
+	Lighting.EnvironmentSpecularScale = 0.6
+	Lighting.ExposureCompensation = 0
 
 	local color = effect("ColorCorrectionEffect", "WarehouseColor") :: ColorCorrectionEffect
-	color.Brightness = 0.02
-	color.Contrast = 0.08
+	color.Brightness = 0
+	color.Contrast = 0.1
 	color.Saturation = 0.05
-	color.TintColor = Color3.fromRGB(255, 252, 248)
+	color.TintColor = Color3.new(1, 1, 1)
 
-	local bloom = effect("BloomEffect", "WarehouseBloom") :: BloomEffect
-	bloom.Intensity = 0.6
-	bloom.Size = 24
-	bloom.Threshold = 1.4
-
-	local atmosphere = effect("Atmosphere", "WarehouseAtmosphere") :: Atmosphere
-	atmosphere.Density = 0.22
-	atmosphere.Offset = 0
-	atmosphere.Haze = 0.4
-	atmosphere.Glare = 0
-	atmosphere.Color = Color3.fromRGB(205, 210, 220)
-	atmosphere.Decay = Color3.fromRGB(110, 115, 130)
+	-- Свечение (bloom) и дымка внутри здания засвечивают картинку, поэтому их нет
+	for _, name in { "WarehouseBloom", "WarehouseAtmosphere" } do
+		local old = Lighting:FindFirstChild(name)
+		if old then
+			old:Destroy()
+		end
+	end
 end
 
 return Environment

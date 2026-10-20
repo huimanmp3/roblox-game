@@ -114,7 +114,8 @@ function Parts.ceilingLight(cframe: CFrame, length: number, range: number, paren
 		Name = "CeilingLight",
 		Size = Vector3.new(length, 0.25, 1.1),
 		CFrame = cframe,
-		Color = Color3.fromRGB(245, 248, 255),
+		-- Светло-серый Neon светится мягко, без ослепительного белого
+		Color = Color3.fromRGB(196, 200, 208),
 		Material = Enum.Material.Neon,
 		CanCollide = false,
 		CanQuery = false,
@@ -124,8 +125,8 @@ function Parts.ceilingLight(cframe: CFrame, length: number, range: number, paren
 	light.Face = Enum.NormalId.Bottom
 	light.Range = range
 	light.Angle = 140
-	light.Brightness = 1.2
-	light.Color = Color3.fromRGB(255, 248, 238)
+	light.Brightness = 0.35
+	light.Color = Color3.fromRGB(255, 246, 232)
 	light.Shadows = false
 	light.Parent = lamp
 	return lamp

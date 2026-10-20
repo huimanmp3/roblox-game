@@ -16,32 +16,27 @@ local STRIPE_Y = 3.2 -- фирменная полоса на стенах, от 
 local STRIPE_HEIGHT = 0.35
 local BORDER_WIDTH = 0.4 -- рамка зоны на полу
 
+-- Спокойные цвета и «настоящие» материалы Roblox (бетон, штукатурка, сталь, рифлёный настил):
+-- у них есть фактура, поэтому склад не выглядит пластиковым и не слепит белым
 local PALETTE = {
-	Floor = Color3.fromRGB(206, 208, 213),
-	Wall = Color3.fromRGB(243, 243, 246),
-	Plinth = Color3.fromRGB(58, 61, 72),
-	Steel = Color3.fromRGB(52, 56, 66),
-	Deck = Color3.fromRGB(178, 182, 190),
-	Furniture = Color3.fromRGB(238, 239, 243),
+	Floor = Color3.fromRGB(138, 141, 147), -- шлифованный бетон
+	Tiles = Color3.fromRGB(196, 199, 205), -- плитка в раздевалке
+	Wall = Color3.fromRGB(205, 207, 212),
+	Roof = Color3.fromRGB(70, 73, 80), -- тёмный промышленный потолок
+	Plinth = Color3.fromRGB(52, 55, 63),
+	Steel = Color3.fromRGB(62, 66, 76),
+	Deck = Color3.fromRGB(128, 132, 140),
+	Furniture = Color3.fromRGB(222, 223, 227),
 }
 
 type Style = { Color: Color3, Material: Enum.Material, Reflectance: number? }
 
--- Свои текстуры (MaterialVariant из Material Manager в Studio): имя детали → имя варианта материала.
--- Например, создай в Material Manager вариант «WarehouseFloor» на основе SmoothPlastic
--- и впиши Floor = "WarehouseFloor". Пустая строка — обычный материал.
-local VARIANTS: { [string]: string } = {
-	Floor = "",
-	Wall = "",
-	Deck = "",
-	Roof = "",
-}
-
 -- Имя детали → как она выглядит
 local STYLES: { [string]: Style } = {
-	Floor = { Color = PALETTE.Floor, Material = Enum.Material.SmoothPlastic, Reflectance = 0.04 },
-	Wall = { Color = PALETTE.Wall, Material = Enum.Material.SmoothPlastic },
-	K2Fence = { Color = PALETTE.Steel, Material = Enum.Material.Metal },
+	Floor = { Color = PALETTE.Floor, Material = Enum.Material.Concrete },
+	Wall = { Color = PALETTE.Wall, Material = Enum.Material.Plaster },
+	Roof = { Color = PALETTE.Roof, Material = Enum.Material.Metal },
+	K2Fence = { Color = PALETTE.Steel, Material = Enum.Material.DiamondPlate },
 	Column = { Color = PALETTE.Steel, Material = Enum.Material.Metal },
 	RackPost = { Color = PALETTE.Steel, Material = Enum.Material.Metal },
 	Post = { Color = PALETTE.Steel, Material = Enum.Material.Metal },
@@ -51,14 +46,28 @@ local STYLES: { [string]: Style } = {
 	BoardPole = { Color = PALETTE.Steel, Material = Enum.Material.Metal },
 	MonitorStand = { Color = PALETTE.Steel, Material = Enum.Material.Metal },
 	TurnstilePost = { Color = PALETTE.Steel, Material = Enum.Material.Metal },
-	Deck = { Color = PALETTE.Deck, Material = Enum.Material.SmoothPlastic },
-	Landing = { Color = PALETTE.Deck, Material = Enum.Material.SmoothPlastic },
-	Stairs = { Color = PALETTE.Deck, Material = Enum.Material.SmoothPlastic },
+	Deck = { Color = PALETTE.Deck, Material = Enum.Material.DiamondPlate },
+	Landing = { Color = PALETTE.Deck, Material = Enum.Material.DiamondPlate },
+	Stairs = { Color = PALETTE.Deck, Material = Enum.Material.DiamondPlate },
 	Desk = { Color = PALETTE.Furniture, Material = Enum.Material.SmoothPlastic },
 	SeniorDesk = { Color = PALETTE.Furniture, Material = Enum.Material.SmoothPlastic },
 	EquipmentDesk = { Color = PALETTE.Furniture, Material = Enum.Material.SmoothPlastic },
-	Bench = { Color = PALETTE.Furniture, Material = Enum.Material.SmoothPlastic },
-	Booth = { Color = PALETTE.Furniture, Material = Enum.Material.SmoothPlastic },
+	Booth = { Color = PALETTE.Furniture, Material = Enum.Material.Plaster },
+}
+
+-- Пол в отдельных помещениях: имя модели → свой пол вместо бетона
+local ROOM_FLOORS: { [string]: Style } = {
+	LockerRoom = { Color = PALETTE.Tiles, Material = Enum.Material.CeramicTiles },
+}
+
+-- Свои текстуры (MaterialVariant из Material Manager в Studio): имя детали → имя варианта материала.
+-- Например, создай в Material Manager вариант «WarehouseFloor» на основе Concrete
+-- и впиши Floor = "WarehouseFloor". Пустая строка — обычный материал.
+local VARIANTS: { [string]: string } = {
+	Floor = "",
+	Wall = "",
+	Deck = "",
+	Roof = "",
 }
 
 -- Надписи на полу у зон: тег → текст
@@ -236,6 +245,10 @@ function Theme.apply(map: Instance)
 			continue
 		end
 		local style = STYLES[instance.Name]
+		local room = instance.Parent
+		if instance.Name == "Floor" and room and ROOM_FLOORS[room.Name] then
+			style = ROOM_FLOORS[room.Name]
+		end
 		if style then
 			instance.Color = style.Color
 			instance.Material = style.Material
